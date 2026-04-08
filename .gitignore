@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Large data files
+data/datasets_v2/
+*.h5
+
+# Experiment outputs (keep pretrained/)
+experiment_output/
+
+# Logs
+*.log
+*.sbx
+
+# Wandb
+wandb/
