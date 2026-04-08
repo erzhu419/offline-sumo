@@ -4,7 +4,7 @@ train_wsrl.py
 WSRL: Policy-dominant offline-to-online RL for SUMO bus holding.
 
 - Warm-start from pretrained/offline_final.pt  (100K-step AWR offline pretraining)
-- Online SAC fine-tuning with BusSimEnv (no offline data retained)
+- Online SAC fine-tuning with SUMO (no offline data retained)
 - Fresh replay buffer: only online sim transitions
 
 Key difference from RLPD: NO offline data mixed in during online phase.
@@ -41,7 +41,7 @@ from model import (
 )
 from bus_replay_buffer import BusMixedReplayBuffer
 from bus_sampler import BusStepSampler, BusEvalSampler
-from envs.bus_sim_env import BusSimEnv
+from envs.sumo_gym_env import SumoGymEnv
 from common.data_utils import set_route_length, build_edge_linear_map
 
 import matplotlib
@@ -143,23 +143,27 @@ buffer = BusMixedReplayBuffer(
 )
 print(f"Online-only buffer capacity: {buffer.max_size:,}")
 
-# ── Sim environment ───────────────────────────────────────────────────────────
-sim_env_path = os.path.join(_ENV, "calibrated_env")
-env = BusSimEnv(path=sim_env_path)
+# ── SUMO environment (same distribution as offline data) ──────────────────────
+_SUMO_DIR = os.path.join(
+    os.path.dirname(_HERE), "sumo-rl",
+    "_standalone_f543609", "SUMO_ruiguang", "online_control",
+)
+_EDGE_XML = os.path.join(_ENV, "network_data", "a_sorted_busline_edge.xml")
+env = SumoGymEnv(sumo_dir=_SUMO_DIR, edge_xml=_EDGE_XML, max_steps=18000, line_id="7X")
 
 sampler_policy = BusSamplerPolicy(policy, args.device)
 sampler = BusStepSampler(
     env=env,
     replay_buffer=buffer,
     max_traj_events=100,
-    p_reset=0.0,          # WSRL: no snapshot reset (no offline snapshots)
+    p_reset=0.0,
     h_rollout=30,
     w_threshold=0.0,
     warmup_episodes=0,
     action_dim=action_dim,
 )
 
-eval_env = BusSimEnv(path=sim_env_path)
+eval_env = SumoGymEnv(sumo_dir=_SUMO_DIR, edge_xml=_EDGE_XML, max_steps=18000, line_id="7X")
 eval_sampler = BusEvalSampler(eval_env)
 
 
