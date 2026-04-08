@@ -410,14 +410,13 @@ class BusStepSampler:
         }
 
     def _init_env_state(self):
-        """Step env until at least one bus produces observations."""
-        action_dict = {}
-        for _ in range(10000):  # safety limit
-            state, reward, done = self.env.step_fast(action_dict)
-            if done:
-                break
-            if any(v for v in state.values()):
-                break
+        """Advance env to the first bus decision event using step_to_event.
+
+        step_fast loops don't reach decision events in this calibrated env
+        (buses need ~3s sim-wall-time before first station arrival).
+        step_to_event fast-forwards internally until a decision is pending.
+        """
+        _, _, _ = self.env.step_to_event({})
 
 
 class BusEvalSampler:
@@ -505,10 +504,4 @@ class BusEvalSampler:
         return trajs
 
     def _init_env_state(self):
-        action_dict = {}
-        for _ in range(10000):
-            state, reward, done = self.env.step_fast(action_dict)
-            if done:
-                break
-            if any(v for v in state.values()):
-                break
+        self.env.step_to_event({})

@@ -183,7 +183,7 @@ def mixed_sac_step(batch):
     rewards  = normalize_rewards(batch["rewards"].squeeze())
     next_obs = batch["next_observations"]
     dones    = batch["dones"].squeeze()
-    alpha    = log_alpha.exp().detach().clamp(max=MAX_ALPHA)
+    alpha    = log_alpha().exp().detach().clamp(max=MAX_ALPHA)
 
     # V update: V(s) ← quantile_reg(E_π[Q(s,·) - α·log_π])
     with torch.no_grad():
@@ -221,17 +221,15 @@ def mixed_sac_step(batch):
     # Alpha update
     with torch.no_grad():
         _, pi_lp3 = policy(obs)
-    alpha_loss = -(log_alpha * (pi_lp3.detach().squeeze() + TARGET_ENTROPY)).mean()
+    alpha_loss = -(log_alpha() * (pi_lp3.detach().squeeze() + TARGET_ENTROPY)).mean()
     alpha_optim.zero_grad(); alpha_loss.backward(); alpha_optim.step()
-    with torch.no_grad():
-        log_alpha.data.clamp_(max=math.log(MAX_ALPHA))
 
     return dict(
         policy_loss=policy_loss.item(),
         qf1_loss=qf1_loss.item(),
         qf2_loss=qf2_loss.item(),
         vf_loss=vf_loss.item(),
-        alpha=log_alpha.exp().item(),
+        alpha=log_alpha().exp().item(),
         mean_q=q1.mean().item(),
         mean_v=v_pred.mean().item(),
     )
