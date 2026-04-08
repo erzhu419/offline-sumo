@@ -139,7 +139,7 @@ buffer = BusMixedReplayBuffer(
     state_dim=obs_dim, action_dim=action_dim, context_dim=30,
     dataset_file=None,   # WSRL: no offline data
     device=args.device,
-    buffer_ratio=500,    # online buffer ~ 500K transitions
+    buffer_ratio=100000, # fixed_dataset_size=0 → max_size = 100001
 )
 print(f"Online-only buffer capacity: {buffer.max_size:,}")
 
@@ -167,6 +167,17 @@ eval_env = SumoGymEnv(sumo_dir=_SUMO_DIR, edge_xml=_EDGE_XML, max_steps=18000, l
 eval_sampler = BusEvalSampler(eval_env)
 
 
+# ── Reward normalization (use offline distribution stats for consistency) ──────
+# WSRL discards offline data but still needs the reward scale to match Q-learning.
+# These are from the offline SUMO dataset (merged_all_v2.h5).
+REWARD_MEAN  = -118.49
+REWARD_STD   = 133.81
+REWARD_SCALE = 10.0   # match H2O+ convention
+
+def normalize_rewards(r):
+    return (r - REWARD_MEAN) / (REWARD_STD + 1e-8) * REWARD_SCALE
+
+
 # ── SAC step (online, no offline data) ───────────────────────────────────────
 DISCOUNT   = 0.80
 SOFT_TAU   = 1e-2
@@ -175,7 +186,7 @@ QUANTILE   = 0.7   # upper quantile → slightly optimistic online V
 def sac_step(batch):
     obs      = batch["observations"]
     actions  = batch["actions"]
-    rewards  = batch["rewards"].squeeze()
+    rewards  = normalize_rewards(batch["rewards"].squeeze())
     next_obs = batch["next_observations"]
     dones    = batch["dones"].squeeze()
     alpha    = log_alpha().exp().detach().clamp(max=MAX_ALPHA)
