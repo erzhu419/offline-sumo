@@ -1,39 +1,27 @@
 """
-train_rlpd.py
-=============
-RLPD: Data-dominant offline-to-online RL for SUMO bus holding.
+train_online_only.py
+====================
+Pure online SAC baseline for SUMO bus holding.
 
-- Random initialization (NO pretrained warm start)
-- Online SAC with offline data mixed 50/50 throughout training
-- BusMixedReplayBuffer: keeps offline data (real) + accumulates online (sim)
-- Each SAC update: batch = 50% offline + 50% online
-
-Key difference from WSRL: offline data is retained and mixed in every update.
-The offline contribution is entirely through data, not policy initialization.
-
-Reference: "Efficient Online RL with Offline Data" (rlpd/)
-Core trick: ensemble Q (N=10, take min of 2) + layer norm for stability.
-            Here we keep twin-Q + V (consistent with bus architecture), but
-            add offline_ratio mixing as the key RLPD contribution.
+- Random initialization (no pretrained weights, no offline data)
+- Online SAC from scratch on SUMO
+- Serves as the lower-bound baseline for offline-to-online comparisons
 
 Run:
     cd /home/erzhu419/mine_code/offline-sumo
-    conda run -n LSTM-RL python train_rlpd.py --n_epochs 500 --device cpu
+    conda run -n LSTM-RL python train_online_only.py --n_epochs 500 --device cpu
 """
 
-import os, sys, math, csv, time, argparse, datetime
+import os, sys, csv, time, argparse, datetime
 import numpy as np
 import torch
 import torch.nn.functional as F
 from copy import deepcopy
 
 # ── Path setup ──────────────────────────────────────────────────────────────
-_HERE    = os.path.dirname(os.path.abspath(__file__))
-_ENV     = os.path.join(_HERE, "env")
-_AGENTS  = os.path.join(_HERE, "agents")
-_BUFFERS = os.path.join(_HERE, "buffers")
-_UTILS   = os.path.join(_HERE, "utils")
-for p in [_HERE, _ENV, _AGENTS, _BUFFERS, _UTILS]:
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for p in [_HERE, os.path.join(_HERE, "env"), os.path.join(_HERE, "agents"),
+          os.path.join(_HERE, "buffers"), os.path.join(_HERE, "utils")]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
@@ -53,21 +41,16 @@ import matplotlib.pyplot as plt
 
 # ── Args ────────────────────────────────────────────────────────────────────
 parser = argparse.ArgumentParser()
-parser.add_argument("--seed",          type=int,   default=42)
-parser.add_argument("--device",        type=str,   default="cpu")
-parser.add_argument("--n_epochs",      type=int,   default=500)
-parser.add_argument("--batch_size",    type=int,   default=512)
-parser.add_argument("--offline_ratio", type=float, default=0.5,
-                    help="fraction of each batch drawn from offline data (RLPD: 0.5)")
-parser.add_argument("--n_rollout",     type=int,   default=100,  help="decision events per epoch")
-parser.add_argument("--n_train",       type=int,   default=100,  help="SAC updates per epoch")
-parser.add_argument("--min_online",    type=int,   default=500,  help="minimum online transitions before training")
-parser.add_argument("--utd",           type=int,   default=1,    help="update-to-data ratio")
-parser.add_argument("--eval_every",    type=int,   default=10)
-parser.add_argument("--ckpt_every",    type=int,   default=50)
-parser.add_argument("--dataset_file",  type=str,
-                    default=os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                         "data", "datasets_v2", "merged_all_v2.h5"))
+parser.add_argument("--seed",        type=int,   default=42)
+parser.add_argument("--device",      type=str,   default="cpu")
+parser.add_argument("--n_epochs",    type=int,   default=500)
+parser.add_argument("--batch_size",  type=int,   default=512)
+parser.add_argument("--n_rollout",   type=int,   default=100,  help="decision events per epoch")
+parser.add_argument("--n_train",     type=int,   default=100,  help="SAC updates per epoch")
+parser.add_argument("--min_online",  type=int,   default=500,  help="minimum online transitions before training")
+parser.add_argument("--utd",         type=int,   default=1,    help="update-to-data ratio")
+parser.add_argument("--eval_every",  type=int,   default=10)
+parser.add_argument("--ckpt_every",  type=int,   default=50)
 args = parser.parse_args()
 
 torch.manual_seed(args.seed)
@@ -75,13 +58,12 @@ np.random.seed(args.seed)
 
 # ── Output dir ───────────────────────────────────────────────────────────────
 _ts = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
-_ratio_tag = f"_ratio{args.offline_ratio}" if args.offline_ratio != 0.5 else ""
-out_dir = os.path.join(_HERE, "experiment_output", f"rlpd{_ratio_tag}_seed{args.seed}_{_ts}")
+out_dir = os.path.join(_HERE, "experiment_output", f"online_seed{args.seed}_{_ts}")
 os.makedirs(out_dir, exist_ok=True)
 print(f"Output: {out_dir}")
 
 # ── Route setup ──────────────────────────────────────────────────────────────
-edge_xml = os.path.join(_ENV, "network_data", "a_sorted_busline_edge.xml")
+edge_xml = os.path.join(_HERE, "env", "network_data", "a_sorted_busline_edge.xml")
 if os.path.exists(edge_xml):
     edge_map = build_edge_linear_map(edge_xml, "7X")
     route_length = max(edge_map.values()) if edge_map else 13119.0
@@ -89,7 +71,7 @@ else:
     route_length = 13119.0
 set_route_length(route_length)
 
-# ── Network architecture (random init — RLPD starts from scratch) ─────────────
+# ── Network architecture (random init) ──────────────────────────────────────
 cat_cols = ["line_id", "bus_id", "station_id", "time_period", "direction"]
 cat_code_dict = {
     "line_id":     {i: i for i in range(12)},
@@ -111,17 +93,16 @@ qf2        = BusEmbeddingQFunction(state_dim, action_dim, hidden_sz, emb_tmpl.cl
 target_qf1 = deepcopy(qf1)
 target_qf2 = deepcopy(qf2)
 vf         = BusEmbeddingVFunction(state_dim, hidden_sz, emb_tmpl.clone())
-# RLPD: random init (no pretrained weights loaded)
-print("RLPD: random parameter initialization")
+print("Online-only SAC: random parameter initialization, no offline data")
 
 dev = torch.device(args.device)
 for m in [policy, qf1, qf2, target_qf1, target_qf2, vf]:
     m.to(dev)
 
 # ── Temperature (α) ──────────────────────────────────────────────────────────
-INIT_LOG_ALPHA = -2.3   # α ≈ 0.10
-TARGET_ENTROPY = -0.21
-MAX_ALPHA      = 0.6
+INIT_LOG_ALPHA  = -2.3
+TARGET_ENTROPY  = -0.21
+MAX_ALPHA       = 0.6
 log_alpha = Scalar(INIT_LOG_ALPHA).to(dev)
 
 # ── Optimizers ───────────────────────────────────────────────────────────────
@@ -131,58 +112,47 @@ qf_optim     = torch.optim.Adam(list(qf1.parameters()) + list(qf2.parameters()),
 vf_optim     = torch.optim.Adam(vf.parameters(), lr=LR)
 alpha_optim  = torch.optim.Adam(log_alpha.parameters(), lr=LR)
 
-# ── Replay buffer WITH offline data ───────────────────────────────────────────
-print(f"Loading offline data from {args.dataset_file} ...")
+# ── Online-only replay buffer (no offline data) ─────────────────────────────
 buffer = BusMixedReplayBuffer(
     state_dim=obs_dim, action_dim=action_dim, context_dim=30,
-    dataset_file=args.dataset_file,   # RLPD: keep offline data
+    dataset_file=None,
     device=args.device,
-    buffer_ratio=2.0,
-    reward_scale=1.0, reward_bias=0.0,
+    buffer_ratio=100000,
 )
-print(f"Offline data: {buffer.fixed_dataset_size:,} transitions")
-reward_mean, reward_std = buffer.get_reward_stats()
-print(f"Reward stats (offline): mean={reward_mean:.2f}, std={reward_std:.2f}")
+print(f"Online-only buffer capacity: {buffer.max_size:,}")
 
-# ── SUMO environment (same distribution as offline data) ──────────────────────
+# ── SUMO environment ────────────────────────────────────────────────────────
 _SUMO_DIR = os.path.join(
     os.path.dirname(_HERE), "sumo-rl",
     "_standalone_f543609", "SUMO_ruiguang", "online_control",
 )
-_EDGE_XML = os.path.join(_ENV, "network_data", "a_sorted_busline_edge.xml")
-env      = SumoGymEnv(sumo_dir=_SUMO_DIR, edge_xml=_EDGE_XML, max_steps=18000, line_id="7X")
-eval_env = SumoGymEnv(sumo_dir=_SUMO_DIR, edge_xml=_EDGE_XML, max_steps=18000, line_id="7X")
+_EDGE_XML = os.path.join(_HERE, "env", "network_data", "a_sorted_busline_edge.xml")
+env = SumoGymEnv(sumo_dir=_SUMO_DIR, edge_xml=_EDGE_XML, max_steps=18000, line_id="7X")
 
 sampler_policy = BusSamplerPolicy(policy, args.device)
 sampler = BusStepSampler(
-    env=env,
-    replay_buffer=buffer,
-    max_traj_events=100,
-    p_reset=0.0,
-    h_rollout=30,
-    w_threshold=0.0,
-    warmup_episodes=0,
-    action_dim=action_dim,
+    env=env, replay_buffer=buffer,
+    max_traj_events=100, p_reset=0.0, h_rollout=30,
+    w_threshold=0.0, warmup_episodes=0, action_dim=action_dim,
 )
+
+eval_env = SumoGymEnv(sumo_dir=_SUMO_DIR, edge_xml=_EDGE_XML, max_steps=18000, line_id="7X")
 eval_sampler = BusEvalSampler(eval_env)
 
-
-# ── Reward normalizer (uses offline statistics) ───────────────────────────────
-REWARD_SCALE = 10.0   # match H2O+ convention
-
+# ── Reward normalization (use offline stats for consistent scale) ────────────
+REWARD_MEAN  = -118.49
+REWARD_STD   = 133.81
+REWARD_SCALE = 10.0
 
 def normalize_rewards(r):
-    return (r - reward_mean) / (reward_std + 1e-8) * REWARD_SCALE
+    return (r - REWARD_MEAN) / (REWARD_STD + 1e-8) * REWARD_SCALE
 
-
-# ── SAC step with mixed batch (RLPD: 50% offline + 50% online) ───────────────
+# ── SAC step ────────────────────────────────────────────────────────────────
 DISCOUNT = 0.80
 SOFT_TAU = 1e-2
 QUANTILE = 0.7
 
-
-def mixed_sac_step(batch):
-    """SAC update on a pre-mixed batch (offline + online concatenated)."""
+def sac_step(batch):
     obs      = batch["observations"]
     actions  = batch["actions"]
     rewards  = normalize_rewards(batch["rewards"].squeeze())
@@ -190,7 +160,6 @@ def mixed_sac_step(batch):
     dones    = batch["dones"].squeeze()
     alpha    = log_alpha().exp().detach().clamp(max=MAX_ALPHA)
 
-    # V update: V(s) ← quantile_reg(E_π[Q(s,·) - α·log_π])
     with torch.no_grad():
         pi_a, pi_lp = policy(obs)
         q_pi = torch.min(qf1(obs, pi_a), qf2(obs, pi_a)).squeeze()
@@ -203,7 +172,6 @@ def mixed_sac_step(batch):
     vf_loss = (w * diff.abs()).mean()
     vf_optim.zero_grad(); vf_loss.backward(); vf_optim.step()
 
-    # Q update: Q(s,a) ← r + γ·V(s')
     with torch.no_grad():
         td_target = rewards + (1.0 - dones) * DISCOUNT * vf(next_obs).squeeze()
     q1 = qf1(obs, actions).squeeze()
@@ -217,72 +185,47 @@ def mixed_sac_step(batch):
     soft_target_update(qf1, target_qf1, SOFT_TAU)
     soft_target_update(qf2, target_qf2, SOFT_TAU)
 
-    # Policy update
     pi_a2, pi_lp2 = policy(obs)
     q_pi2 = torch.min(qf1(obs, pi_a2), qf2(obs, pi_a2)).squeeze()
     policy_loss = (alpha * pi_lp2.squeeze() - q_pi2).mean()
     policy_optim.zero_grad(); policy_loss.backward(); policy_optim.step()
 
-    # Alpha update
     with torch.no_grad():
         _, pi_lp3 = policy(obs)
     alpha_loss = -(log_alpha() * (pi_lp3.detach().squeeze() + TARGET_ENTROPY)).mean()
     alpha_optim.zero_grad(); alpha_loss.backward(); alpha_optim.step()
 
     return dict(
-        policy_loss=policy_loss.item(),
-        qf1_loss=qf1_loss.item(),
-        qf2_loss=qf2_loss.item(),
-        vf_loss=vf_loss.item(),
-        alpha=log_alpha().exp().item(),
-        mean_q=q1.mean().item(),
-        mean_v=v_pred.mean().item(),
+        policy_loss=policy_loss.item(), qf1_loss=qf1_loss.item(),
+        qf2_loss=qf2_loss.item(), vf_loss=vf_loss.item(),
+        alpha=log_alpha().exp().item(), mean_q=q1.mean().item(),
     )
 
-
-def make_mixed_batch(batch_size, offline_ratio):
-    """Sample batch = offline_ratio from real (offline) + rest from sim (online)."""
-    n_offline = int(batch_size * offline_ratio)
-    n_online  = batch_size - n_offline
-    offline_batch = buffer.sample(n_offline, scope="real")
-    online_batch  = buffer.sample(n_online,  scope="sim")
-    # Concatenate along batch dimension
-    mixed = {
-        k: torch.cat([offline_batch[k], online_batch[k]], dim=0)
-        for k in ("observations", "actions", "rewards", "next_observations", "dones")
-    }
-    return mixed
-
-
-# ── CSV logger ────────────────────────────────────────────────────────────────
+# ── CSV logger ──────────────────────────────────────────────────────────────
 csv_path = os.path.join(out_dir, "train_log.csv")
 csv_f = open(csv_path, "w", newline="")
 csv_w = csv.writer(csv_f)
 csv_w.writerow(["epoch", "online_buf", "policy_loss", "qf1_loss", "qf2_loss",
                 "vf_loss", "alpha", "mean_q", "eval_return", "wall_sec"])
 
-# ── Training loop ─────────────────────────────────────────────────────────────
-print(f"\nRLPD training: {args.n_epochs} epochs, batch={args.batch_size}, "
-      f"offline_ratio={args.offline_ratio}, UTD={args.utd}")
+# ── Training loop ───────────────────────────────────────────────────────────
+print(f"\nOnline-only SAC: {args.n_epochs} epochs, batch={args.batch_size}")
 t0 = time.time()
 history = []
 eval_return = 0.0
 
 for epoch in range(1, args.n_epochs + 1):
-    # ── Rollout ──────────────────────────────────────────────────────
     roll_info = sampler.sample(sampler_policy, n_steps=args.n_rollout)
     n_online = buffer.size - buffer.fixed_dataset_size
 
-    # ── Train ────────────────────────────────────────────────────────
     losses = {}
     if n_online >= args.min_online:
         for _ in range(args.n_train * args.utd):
             if not buffer.has_online_data():
                 break
-            batch = make_mixed_batch(args.batch_size, args.offline_ratio)
-            losses = mixed_sac_step(batch)
+            batch = buffer.sample(args.batch_size, scope="sim")
+            losses = sac_step(batch)
 
-    # ── Eval ─────────────────────────────────────────────────────────
     if epoch % args.eval_every == 0:
         trajs = eval_sampler.sample(sampler_policy, n_trajs=2)
         eval_return = float(np.mean([sum(t["rewards"]) for t in trajs])) if trajs else 0.0
@@ -306,7 +249,6 @@ for epoch in range(1, args.n_epochs + 1):
     if epoch % args.eval_every == 0:
         history.append(dict(epoch=epoch, eval_return=eval_return, **losses))
 
-    # ── Checkpoint ───────────────────────────────────────────────────
     if epoch % args.ckpt_every == 0:
         ckpt_p = os.path.join(out_dir, f"checkpoint_epoch{epoch}.pt")
         torch.save(dict(policy=policy.state_dict(), qf1=qf1.state_dict(),
@@ -314,13 +256,11 @@ for epoch in range(1, args.n_epochs + 1):
 
 csv_f.close()
 
-# ── Final save ───────────────────────────────────────────────────────────────
 torch.save(dict(policy=policy.state_dict(), qf1=qf1.state_dict(),
                 qf2=qf2.state_dict(), vf=vf.state_dict(), epoch=args.n_epochs),
            os.path.join(out_dir, "model_final.pt"))
 print(f"\nFinal model saved → {out_dir}/model_final.pt")
 
-# ── Plot ──────────────────────────────────────────────────────────────────────
 if history:
     fig, axes = plt.subplots(1, 3, figsize=(15, 4))
     epochs = [h["epoch"] for h in history]

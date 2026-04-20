@@ -24,7 +24,7 @@ class env_bus(object):
     # share the same underlying data directory (e.g. multi-line envs).
     _DATA_CACHE: dict = {}
 
-    def __init__(self, path, debug=False, render=False):
+    def __init__(self, path, debug=False, render=False, od_mult=1.0):
         if render:
             # pygame.init()
             pass
@@ -101,6 +101,10 @@ class env_bus(object):
         self.timetables = self.set_timetables()
 
         self.state_dim = 15  # aligned with SUMO rl_env.py (15-dim obs)
+        self.od_mult = float(od_mult)  # OOD demand multiplier (1.0 = normal)
+        # Abrupt shift: if set, od_mult triggers at inject_time, else always on
+        self.ood_inject_time = None    # seconds into episode (None = always-on multiplier)
+        self.ood_burst_mult = 1.0      # multiplier applied after inject_time
 
     @property
     def bus_in_terminal(self):
@@ -232,9 +236,14 @@ class env_bus(object):
         if len(self._pax_flat_rates) == 0:
             return
 
+        # Effective multiplier: abrupt burst overrides od_mult after inject_time
+        if self.ood_inject_time is not None and current_time >= self.ood_inject_time:
+            mult = self.ood_burst_mult
+        else:
+            mult = self.od_mult
+
         # Single batched Poisson call — replaces N separate calls
-        # Single batched Poisson call — replaces N separate calls
-        arrivals = np.random.poisson(self._pax_flat_rates * update_interval)
+        arrivals = np.random.poisson(self._pax_flat_rates * update_interval * mult)
 
         for n_arrive, (station, dest) in zip(arrivals, self._pax_flat_map):
             if n_arrive == 0:
@@ -543,10 +552,11 @@ class MultiLineEnv:
     REQUIRED_FILES = {'stop_news.xlsx', 'route_news.xlsx',
                       'time_table.xlsx', 'passenger_OD.xlsx'}
 
-    def __init__(self, path: str, debug: bool = False, render: bool = False):
+    def __init__(self, path: str, debug: bool = False, render: bool = False, od_mult: float = 1.0):
         self.path   = path
         self.debug  = debug
         self.render = render
+        self.od_mult = float(od_mult)
 
         data_dir = os.path.join(path, 'data')
         self.line_map: dict[str, 'env_bus'] = {}
@@ -564,7 +574,7 @@ class MultiLineEnv:
             try:
                 # Create sub-path with symlink/copy of config + data subdir
                 line_path = self._make_line_path(path, name)
-                le = env_bus(line_path, debug=debug, render=render)
+                le = env_bus(line_path, debug=debug, render=render, od_mult=od_mult)
                 le.line_id  = name
                 le.line_idx = len(self.line_map)
                 le.line_id_str = name  # for signal model lookup in bus.py
@@ -629,6 +639,22 @@ class MultiLineEnv:
             # Patch line_idx into future buses (set default in env)
             le._line_idx_for_bus = le.line_idx
         return self._aggregate_state(), self._aggregate_reward(), False
+
+    def set_ood_burst(self, inject_time: float, burst_mult: float):
+        """
+        Configure abrupt OOD injection on all lines.
+        After `inject_time` seconds into the episode, all lines apply `burst_mult`
+        to passenger arrival rates (simulates sudden demand spike like mega_event).
+        """
+        for le in self.line_map.values():
+            le.ood_inject_time = float(inject_time)
+            le.ood_burst_mult = float(burst_mult)
+
+    def clear_ood_burst(self):
+        """Disable abrupt OOD injection on all lines."""
+        for le in self.line_map.values():
+            le.ood_inject_time = None
+            le.ood_burst_mult = 1.0
 
     def initialize_state(self, render=False):
         """Step until at least one line has an observation."""

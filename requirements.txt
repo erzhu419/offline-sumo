@@ -1,0 +1,25 @@
+# ============================================================================
+# offline-sumo — minimal install (Python 3.8 recommended)
+#
+#   conda create -n offline-sumo python=3.8 -y
+#   conda activate offline-sumo
+#   pip install -r requirements.txt
+#
+# Only packages actually imported by the training scripts.
+# Flexible version constraints let pip resolve whatever fits Python 3.8.
+# ============================================================================
+
+torch>=2.0,<2.5
+numpy>=1.22,<2.0
+h5py>=3.1
+matplotlib>=3.5
+pandas>=1.5
+
+absl-py>=1.0
+ml_collections>=0.1
+tqdm>=4.6
+
+gym>=0.26
+
+eclipse-sumo>=1.20
+libsumo>=1.20
