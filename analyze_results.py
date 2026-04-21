@@ -37,14 +37,27 @@ def detect_method(dirname):
     return None, None
 
 def load_eval_returns(csv_path):
-    """Load (epoch, eval_return) pairs from train_log.csv."""
+    """Load (step_or_epoch, eval_return) pairs from train_log.csv.
+
+    Offline scripts (bc, resac) use 'step' + 'eval_return' logged sparsely.
+    Online scripts (online, wsrl, rlpd) use 'epoch' + 'eval_return' each epoch.
+    """
     results = []
     with open(csv_path) as f:
         reader = csv.DictReader(f)
+        if reader.fieldnames is None or "eval_return" not in reader.fieldnames:
+            return results
+        x_key = "epoch" if "epoch" in reader.fieldnames else "step"
         prev_ret = None
         for row in reader:
-            ret = float(row["eval_return"])
-            ep = int(row["epoch"])
+            try:
+                ret = float(row["eval_return"])
+            except (KeyError, ValueError, TypeError):
+                continue
+            try:
+                ep = int(float(row[x_key]))
+            except (KeyError, ValueError, TypeError):
+                continue
             if ret != 0.0 or (prev_ret is not None and prev_ret != ret):
                 results.append((ep, ret))
             prev_ret = ret

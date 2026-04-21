@@ -39,6 +39,8 @@ parser.add_argument("--batch_size", type=int, default=2048)
 parser.add_argument("--lr",         type=float, default=3e-4)
 parser.add_argument("--n_eval",     type=int, default=10)
 parser.add_argument("--eval_every", type=int, default=5000)
+parser.add_argument("--ckpt_every", type=int, default=10000,
+                    help="save checkpoint every N steps (besides model_final.pt)")
 parser.add_argument("--dataset_file", type=str,
                     default=os.path.join(_HERE, "data", "datasets_v2", "merged_all_v2.h5"))
 args = parser.parse_args()
@@ -138,6 +140,10 @@ for step in range(1, args.n_steps + 1):
     csv_w.writerow([step, bc_loss.item(), eval_return, time.time() - t0])
     if step % 100 == 0:
         csv_f.flush()
+
+    if step % args.ckpt_every == 0:
+        ckpt_p = os.path.join(out_dir, f"checkpoint_step{step}.pt")
+        torch.save(dict(policy=policy.state_dict(), step=step), ckpt_p)
 
 csv_f.close()
 

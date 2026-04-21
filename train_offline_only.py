@@ -25,10 +25,11 @@ from copy import deepcopy
 from collections import defaultdict
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_H2O_ROOT = os.path.dirname(_HERE)
-_BUS_H2O = os.path.join(_H2O_ROOT, "bus_h2o")
+_BUS_H2O = _HERE  # data/, env/, etc. are siblings of this script
 sys.path.insert(0, _HERE)
-sys.path.insert(0, _BUS_H2O)
+sys.path.insert(0, os.path.join(_HERE, "agents"))
+sys.path.insert(0, os.path.join(_HERE, "buffers"))
+sys.path.insert(0, os.path.join(_HERE, "env"))
 
 from bus_replay_buffer import BusMixedReplayBuffer
 from h2oplus_bus import H2OPlusBus
@@ -47,6 +48,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--n_steps', type=int, default=100000)
 parser.add_argument('--batch_size', type=int, default=2048)
 parser.add_argument('--eval_every', type=int, default=5000)
+parser.add_argument('--ckpt_every', type=int, default=10000,
+                    help="save checkpoint every N steps (besides offline_final.pt)")
 parser.add_argument('--device', type=str, default='cpu')
 parser.add_argument('--seed', type=int, default=42)
 args = parser.parse_args()
@@ -55,11 +58,14 @@ torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
 # ── Output ──
-out_dir = os.path.join(_H2O_ROOT, "experiment_output", "offline_only")
+import datetime as _dt
+_ts = _dt.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
+out_dir = os.path.join(_HERE, "experiment_output", f"offline_only_seed{args.seed}_{_ts}")
 os.makedirs(out_dir, exist_ok=True)
+print(f"Output: {out_dir}")
 
 # ── Route length ──
-edge_xml = os.path.join(_BUS_H2O, "network_data", "a_sorted_busline_edge.xml")
+edge_xml = os.path.join(_HERE, "env", "network_data", "a_sorted_busline_edge.xml")
 if os.path.exists(edge_xml):
     edge_map = build_edge_linear_map(edge_xml, "7X")
     route_length = max(edge_map.values()) if edge_map else 13119.0
@@ -69,7 +75,7 @@ set_route_length(route_length)
 
 # ── Load offline data ──
 print("Loading offline data...")
-ds_file = os.path.join(_BUS_H2O, "datasets_v2", "merged_all_v2.h5")
+ds_file = os.path.join(_HERE, "data", "datasets_v2", "merged_all_v2.h5")
 replay_buffer = BusMixedReplayBuffer(
     state_dim=17, action_dim=2, context_dim=30,
     dataset_file=ds_file, device=args.device,
@@ -197,6 +203,16 @@ for step in range(1, args.n_steps + 1):
             if mask.sum() > 0:
                 h = hold_sec[mask]
                 print(f"    [{lo:>5d},{hi:>5d})  {h.mean():>10.1f}  {h.std():>10.1f}  {mask.sum():>6d}")
+
+    if step % args.ckpt_every == 0:
+        ckpt_p = os.path.join(out_dir, f"checkpoint_step{step}.pt")
+        torch.save({
+            'policy': policy.state_dict(),
+            'qf1': qf1.state_dict(),
+            'qf2': qf2.state_dict(),
+            'vf': vf.state_dict(),
+            'step': step,
+        }, ckpt_p)
 
 csv_file.close()
 

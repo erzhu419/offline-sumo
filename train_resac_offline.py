@@ -83,13 +83,16 @@ parser.add_argument("--ckpt_every",    type=int,   default=10000)
 parser.add_argument("--n_eval",        type=int,   default=10)
 parser.add_argument("--dataset_file",  type=str,
                     default=os.path.join(_HERE, "data", "datasets_v2", "merged_all_v2.h5"))
+parser.add_argument("--tag",           type=str,   default="",
+                    help="optional tag inserted into output dir for ablation variants")
 args = parser.parse_args()
 
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
 _ts = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
-out_dir = os.path.join(_HERE, "experiment_output", f"resac_offline_seed{args.seed}_{_ts}")
+_tag = f"_{args.tag}" if args.tag else ""
+out_dir = os.path.join(_HERE, "experiment_output", f"resac_offline{_tag}_seed{args.seed}_{_ts}")
 os.makedirs(out_dir, exist_ok=True)
 print(f"Output: {out_dir}")
 

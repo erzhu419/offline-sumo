@@ -16,13 +16,18 @@ if "SUMO_HOME" in os.environ:
 else:
     raise EnvironmentError("Please declare environment variable 'SUMO_HOME'!")
 
-import traci
+# Patch traci -> libsumo BEFORE any other module imports traci
+# Without this, sim_obj/signal.py (imported via f_8_create_obj below) binds to
+# real traci, which fails when libsumo runs in-process (no TCP server).
 LIBSUMO_AVAILABLE = False
 try:
     import libsumo
     LIBSUMO_AVAILABLE = True
+    sys.modules['traci'] = libsumo
 except ImportError:
     pass
+
+import traci
 
 from sumolib import checkBinary
 import traci.constants as tc

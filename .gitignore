@@ -19,3 +19,11 @@ experiment_output/
 
 # Wandb
 wandb/
+
+# LaTeX build artifacts
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.out
+paper/*.log
+paper/*.toc
