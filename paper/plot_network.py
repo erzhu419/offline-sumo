@@ -24,7 +24,7 @@ OUT  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "figures", "netw
 LINE_ORDER = ["7X", "7S", "102X", "102S", "311X", "311S",
               "122X", "122S", "406X", "406S", "705X", "705S"]
 LINE_COLORS = {
-    "7X":   "#d62728",   # bright red — agent
+    "7X":   "#d62728",   # bright red — reference line (longest)
     "7S":   "#ff7f0e",   # orange
     "102X": "#2ca02c",
     "102S": "#98df8a",
@@ -96,7 +96,20 @@ for bs in tree.getroot().iter("busStop"):
         pass
 print(f"  {len(stops)} bus stops placed")
 
-line7x_stops = [s for s in stops if s[2].startswith("7X")]
+# Bucket stops by line prefix
+def stop_line_prefix(stop_id):
+    # Stops are named like "7X01_7S26" — first prefix before the digits
+    import re as _re
+    m = _re.match(r"^([0-9]+[XS])", stop_id)
+    return m.group(1) if m else None
+
+stops_by_line = {k: [] for k in LINE_ORDER}
+for x, y, sid in stops:
+    pref = stop_line_prefix(sid)
+    if pref in stops_by_line:
+        stops_by_line[pref].append((x, y, sid))
+for k in LINE_ORDER:
+    print(f"  stops for {k}: {len(stops_by_line[k])}")
 
 # ── 4. Plot ───────────────────────────────────────────────────────────────────
 fig, ax = plt.subplots(figsize=(11, 9))
@@ -125,20 +138,28 @@ def plot_line(line_key, zorder, lw, alpha=0.85):
 # Non-agent lines first (thinner)
 for k in LINE_ORDER:
     if k == "7X": continue
-    plot_line(k, zorder=2, lw=1.4, alpha=0.75)
+    plot_line(k, zorder=2, lw=1.2, alpha=0.75)
+    # Small stop markers for non-agent lines
+    k_stops = stops_by_line.get(k, [])
+    if k_stops:
+        xs = [s[0] for s in k_stops]
+        ys = [s[1] for s in k_stops]
+        ax.scatter(xs, ys, s=8, c=LINE_COLORS[k], edgecolors="black",
+                   linewidths=0.3, zorder=3, marker="o", alpha=0.85)
+
 # Agent line on top (thicker)
 plot_line("7X", zorder=5, lw=2.8, alpha=1.0)
 
-# Line 7X stops
+# Line 7X stops — larger markers to emphasise agent-controlled stops
+line7x_stops = stops_by_line.get("7X", [])
 if line7x_stops:
     xs = [s[0] for s in line7x_stops]
     ys = [s[1] for s in line7x_stops]
     ax.scatter(xs, ys, s=36, c=LINE_COLORS["7X"], edgecolors="black",
-               linewidths=0.8, zorder=6, marker="o", label="Line 7X stops")
+               linewidths=0.8, zorder=6, marker="o", label="Line 7X stops (agent)")
 
 # Legend
-patches = [mpatches.Patch(color=LINE_COLORS[k],
-                           label=f"Line {k} ({'agent-controlled' if k=='7X' else 'baseline'})")
+patches = [mpatches.Patch(color=LINE_COLORS[k], label=f"Line {k}")
            for k in LINE_ORDER]
 patches.append(mpatches.Patch(color="#cccccc", label="Road network"))
 ax.legend(handles=patches, loc="lower left", fontsize=8, ncol=2, framealpha=0.9)
@@ -146,7 +167,7 @@ ax.legend(handles=patches, loc="lower left", fontsize=8, ncol=2, framealpha=0.9)
 ax.set_aspect("equal")
 ax.set_xticks([]); ax.set_yticks([])
 ax.spines[["top","right","bottom","left"]].set_visible(False)
-ax.set_title("Changsha 12-line bus network (SUMO). Agent controls Line 7X (bold red)", fontsize=11)
+ax.set_title("Changsha 12-line bus network (SUMO). All 12 lines are agent-controlled; Line 7X (bold red) is the longest, shown for reference.", fontsize=10)
 
 plt.tight_layout()
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
