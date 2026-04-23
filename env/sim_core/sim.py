@@ -102,9 +102,16 @@ class env_bus(object):
 
         self.state_dim = 15  # aligned with SUMO rl_env.py (15-dim obs)
         self.od_mult = float(od_mult)  # OOD demand multiplier (1.0 = normal)
-        # Abrupt shift: if set, od_mult triggers at inject_time, else always on
+        # Abrupt shift (single-step): if set, od_mult triggers at inject_time, else always on
         self.ood_inject_time = None    # seconds into episode (None = always-on multiplier)
         self.ood_burst_mult = 1.0      # multiplier applied after inject_time
+        # Within-episode piecewise-constant schedule (multi-burst).
+        # If set, takes precedence over single-step burst and static od_mult.
+        # Format: sorted list of (t_seconds, multiplier) tuples, monotonically
+        # increasing in t. At current_time, the multiplier from the latest entry
+        # with t <= current_time is used; before the first entry's t, od_mult
+        # is used.
+        self.ood_schedule = None
 
     @property
     def bus_in_terminal(self):
@@ -236,8 +243,15 @@ class env_bus(object):
         if len(self._pax_flat_rates) == 0:
             return
 
-        # Effective multiplier: abrupt burst overrides od_mult after inject_time
-        if self.ood_inject_time is not None and current_time >= self.ood_inject_time:
+        # Effective multiplier: schedule > single-burst > static od_mult
+        if self.ood_schedule:
+            mult = self.od_mult
+            for t_entry, m_entry in self.ood_schedule:
+                if current_time >= t_entry:
+                    mult = m_entry
+                else:
+                    break
+        elif self.ood_inject_time is not None and current_time >= self.ood_inject_time:
             mult = self.ood_burst_mult
         else:
             mult = self.od_mult
@@ -655,6 +669,42 @@ class MultiLineEnv:
         for le in self.line_map.values():
             le.ood_inject_time = None
             le.ood_burst_mult = 1.0
+
+    def set_ood_schedule(self, schedule):
+        """
+        Configure a within-episode piecewise-constant OOD demand schedule.
+
+        Args:
+            schedule: list of (t_seconds, multiplier) tuples, must be sorted
+                by t_seconds ascending. At each simulation tick, the
+                multiplier from the latest entry with t <= current_time is
+                applied to passenger arrival rates. Before the first
+                entry's t, the line's default od_mult applies.
+
+        Example (peak-off-peak-peak oscillation over 18000s episode):
+            env.set_ood_schedule([
+                (   0, 1.0),   # t=0: normal
+                ( 3600, 10.0), # +1h: morning peak
+                ( 7200, 2.0),  # +2h: off-peak
+                (10800, 20.0), # +3h: noon surge
+                (14400, 5.0),  # +4h: evening
+                (16200, 50.0), # +4.5h: extreme event
+            ])
+
+        Takes precedence over set_ood_burst and static od_mult.
+        """
+        if not schedule:
+            self.clear_ood_schedule()
+            return
+        normalized = sorted(((float(t), float(m)) for t, m in schedule),
+                            key=lambda x: x[0])
+        for le in self.line_map.values():
+            le.ood_schedule = list(normalized)
+
+    def clear_ood_schedule(self):
+        """Disable within-episode OOD schedule on all lines."""
+        for le in self.line_map.values():
+            le.ood_schedule = None
 
     def initialize_state(self, render=False):
         """Step until at least one line has an observation."""
