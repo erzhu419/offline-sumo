@@ -85,6 +85,8 @@ parser.add_argument("--dataset_file",  type=str,
                     default=os.path.join(_HERE, "data", "datasets_v2", "merged_all_v2.h5"))
 parser.add_argument("--tag",           type=str,   default="",
                     help="optional tag inserted into output dir for ablation variants")
+parser.add_argument("--no_eval", action="store_true",
+                    help="skip SUMO eval during training (training-only mode for nodes without SUMO)")
 args = parser.parse_args()
 
 torch.manual_seed(args.seed)
@@ -156,13 +158,18 @@ reward_mean, reward_std = buffer.get_reward_stats()
 print(f"Offline reward stats: mean={reward_mean:.2f}, std={reward_std:.2f}")
 
 # ── Eval env (SUMO) ─────────────────────────────────────────────────────────
-_SUMO_DIR = os.path.join(
-    os.path.dirname(_HERE), "sumo-rl",
-    "_standalone_f543609", "SUMO_ruiguang", "online_control",
-)
-eval_env = SumoGymEnv(sumo_dir=_SUMO_DIR, edge_xml=edge_xml, max_steps=18000, line_id="7X")
-eval_sampler = BusEvalSampler(eval_env)
 sampler_policy = BusSamplerPolicy(policy, args.device)
+eval_sampler = None
+if not args.no_eval:
+    _SUMO_DIR = os.path.join(
+        os.path.dirname(_HERE), "sumo-rl",
+        "_standalone_f543609", "SUMO_ruiguang", "online_control",
+    )
+    if os.path.isdir(_SUMO_DIR):
+        eval_env = SumoGymEnv(sumo_dir=_SUMO_DIR, edge_xml=edge_xml, max_steps=18000, line_id="7X")
+        eval_sampler = BusEvalSampler(eval_env)
+    else:
+        print("SUMO sim dir missing; running with --no_eval semantics.")
 
 
 REWARD_SCALE = 10.0
@@ -271,7 +278,7 @@ history = []
 for step in range(1, args.n_steps + 1):
     losses = train_step()
 
-    if step % args.eval_every == 0:
+    if step % args.eval_every == 0 and eval_sampler is not None:
         trajs = eval_sampler.sample(sampler_policy, n_trajs=2, deterministic=True)
         eval_return = float(np.mean([sum(t["rewards"]) for t in trajs])) if trajs else 0.0
         print(f"  [Step {step:6d}/{args.n_steps}]  "
@@ -303,30 +310,33 @@ torch.save(dict(policy=policy.state_dict(), qfs=qfs.state_dict(), step=args.n_st
 print(f"\nFinal model saved → {out_dir}/model_final.pt")
 
 # ── Final eval (statistics) ────────────────────────────────────────────────
-print(f"\nFinal eval: {args.n_eval} episodes...")
 returns = []
-for i in range(args.n_eval):
-    trajs = eval_sampler.sample(sampler_policy, n_trajs=1, deterministic=True)
-    ret = sum(trajs[0]["rewards"])
-    returns.append(ret)
-    print(f"  Episode {i+1}/{args.n_eval}: return={ret:.1f}")
-returns = np.array(returns)
-result = {
-    "method": "RE-SAC (offline)",
-    "seed": args.seed, "n_eval": args.n_eval,
-    "mean_return": float(returns.mean()),
-    "std_return":  float(returns.std()),
-    "min_return":  float(returns.min()),
-    "max_return":  float(returns.max()),
-    "all_returns": returns.tolist(),
-}
-with open(os.path.join(out_dir, "eval_result.json"), "w") as f:
-    json.dump(result, f, indent=2)
-
-print(f"\n{'='*50}")
-print(f"RE-SAC offline eval: {result['mean_return']:.1f} ± {result['std_return']:.1f}")
-print(f"  min={result['min_return']:.1f}, max={result['max_return']:.1f}")
-print(f"{'='*50}")
+if eval_sampler is not None:
+    print(f"\nFinal eval: {args.n_eval} episodes...")
+    for i in range(args.n_eval):
+        trajs = eval_sampler.sample(sampler_policy, n_trajs=1, deterministic=True)
+        ret = sum(trajs[0]["rewards"])
+        returns.append(ret)
+        print(f"  Episode {i+1}/{args.n_eval}: return={ret:.1f}")
+else:
+    print("\n--no_eval set; skipping final SUMO eval (post-hoc evaluation will run separately).")
+returns = np.array(returns) if returns else np.array([])
+if returns.size > 0:
+    result = {
+        "method": "RE-SAC (offline)",
+        "seed": args.seed, "n_eval": args.n_eval,
+        "mean_return": float(returns.mean()),
+        "std_return":  float(returns.std()),
+        "min_return":  float(returns.min()),
+        "max_return":  float(returns.max()),
+        "all_returns": returns.tolist(),
+    }
+    with open(os.path.join(out_dir, "eval_result.json"), "w") as f:
+        json.dump(result, f, indent=2)
+    print(f"\n{'='*50}")
+    print(f"RE-SAC offline eval: {result['mean_return']:.1f} ± {result['std_return']:.1f}")
+    print(f"  min={result['min_return']:.1f}, max={result['max_return']:.1f}")
+    print(f"{'='*50}")
 
 # ── Plot ────────────────────────────────────────────────────────────────────
 if history:

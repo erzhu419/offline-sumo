@@ -41,6 +41,8 @@ RUN_PATTERNS = [
     ("RE-SAC no LCB",   re.compile(r"^resac_offline_noLCB_seed(\d+)_26-04-(20|21)")),
     ("RE-SAC no L1",    re.compile(r"^resac_offline_noL1_seed(\d+)_26-04-(20|21)")),
     ("RE-SAC no reg",   re.compile(r"^resac_offline_noBoth_seed(\d+)_26-04-(20|21)")),
+    ("RE-SAC twinQ+LCB", re.compile(r"^resac_offline_twinQ_LCB_seed(\d+)_26-04-28")),
+    ("RE-SAC twinQ only", re.compile(r"^resac_offline_twinQ_only_seed(\d+)_26-04-28")),
     ("H2O+ offline",    re.compile(r"^offline_only_seed(\d+)_26-04-(20|21)")),
     ("Online SAC",      re.compile(r"^online_seed(\d+)_26-04-(20|21)")),
     ("WSRL",            re.compile(r"^wsrl_seed(\d+)_26-04-(20|21)")),
