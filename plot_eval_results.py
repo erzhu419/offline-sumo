@@ -21,6 +21,7 @@ EXP_DIR = os.path.join(_HERE, "experiment_output")
 COLORS = {
     "BC":              "#9467bd",
     "H2O+ offline":    "#17becf",
+    "CQL":             "#bcbd22",
     "RE-SAC offline":  "#8c564b",
     "Online SAC":      "#7f7f7f",
     "WSRL":            "#2ca02c",
@@ -31,6 +32,7 @@ COLORS = {
 LINESTYLES = {
     "BC":              "--",
     "H2O+ offline":    ":",
+    "CQL":             (0, (3, 1, 1, 1)),
     "RE-SAC offline":  "-.",
     "Online SAC":      ":",
     "WSRL":            "-",
@@ -80,7 +82,7 @@ print("=" * 80)
 if offline_mean is not None:
     print(f"\nOffline-only (H2O+ AWR, no fine-tune): {offline_mean:.0f} ± {offline_std:.0f}")
 
-METHODS = ["BC", "H2O+ offline", "RE-SAC offline", "Online SAC", "WSRL", "RLPD (0.25)", "RLPD (0.50)", "RLPD (0.75)"]
+METHODS = ["BC", "H2O+ offline", "CQL", "RE-SAC offline", "Online SAC", "WSRL", "RLPD (0.25)", "RLPD (0.50)", "RLPD (0.75)"]
 print(f"\n{'Method':<18} {'Seeds':>5} {'Best (mean±std)':>24} {'Final (mean±std)':>24}")
 print("-" * 80)
 
@@ -109,7 +111,7 @@ print(f"\nSaved: eval_summary_n10.csv")
 # ── Figure 1: Learning curves ─────────────────────────────────────────────────
 fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 # Separate step-based (BC, RE-SAC) from epoch-based (online methods)
-step_methods = ["BC", "H2O+ offline", "RE-SAC offline"]
+step_methods = ["BC", "H2O+ offline", "CQL", "RE-SAC offline"]
 epoch_methods = ["Online SAC", "WSRL", "RLPD (0.25)", "RLPD (0.50)", "RLPD (0.75)"]
 
 def plot_curves(ax, methods, x_col):

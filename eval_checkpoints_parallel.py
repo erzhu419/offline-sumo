@@ -36,6 +36,7 @@ args = parser.parse_args()
 # ── Patterns identifying which runs to evaluate ───────────────────────────────
 RUN_PATTERNS = [
     ("BC",              re.compile(r"^bc_seed(\d+)_26-04-(20|21)")),
+    ("CQL",             re.compile(r"^cql_seed(\d+)_26-04-27")),
     ("RE-SAC offline",  re.compile(r"^resac_offline_seed(\d+)_26-04-(20|21)")),
     ("RE-SAC no LCB",   re.compile(r"^resac_offline_noLCB_seed(\d+)_26-04-(20|21)")),
     ("RE-SAC no L1",    re.compile(r"^resac_offline_noL1_seed(\d+)_26-04-(20|21)")),

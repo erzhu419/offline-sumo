@@ -1,7 +1,6 @@
-\documentclass[10pt]{article}
+\documentclass[journal,10pt]{IEEEtran}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
-\usepackage[margin=1in, left=1.25in, right=1.25in, top=1in, bottom=1in]{geometry}
 \usepackage{algorithm}
 \usepackage{algorithmic}
 \usepackage[linktoc=all, bookmarksdepth=3, pdfstartview=FitH]{hyperref}
@@ -21,26 +20,26 @@
 \usepackage{multirow}
 \usepackage{subcaption}
 \usepackage{url}
-\usepackage[numbers,sort&compress]{natbib}
+\usepackage{cite}
 
 \graphicspath{ {./} }
 
-\title{Uncertainty-regularized offline reinforcement learning matches offline-to-online fine-tuning for bus holding control: A SUMO benchmark\footnote{Code available at \url{https://github.com/erzhu419/offline-sumo}}}
+\title{Uncertainty-regularized offline reinforcement learning matches offline-to-online fine-tuning for bus holding control: A SUMO benchmark}
 
-\author{
-  Zhang Yifan\thanks{Central South University, \href{mailto:erzhu419@gmail.com}{erzhu419@gmail.com}, \href{mailto:204201048@csu.edu.cn}{204201048@csu.edu.cn}} \and
-  Zheng Liang\thanks{Central South University, \href{mailto:zhengliang@csu.edu.cn}{zhengliang@csu.edu.cn}}
-}
-\date{}
+\author{Zhang~Yifan, and~Liang~Zheng%
+\thanks{Z. Yifan and L. Zheng are with the School, Central South University, Changsha, China. E-mail: \href{mailto:erzhu419@gmail.com}{erzhu419@gmail.com}, \href{mailto:204201048@csu.edu.cn}{204201048@csu.edu.cn}, \href{mailto:zhengliang@csu.edu.cn}{zhengliang@csu.edu.cn}.}%
+\thanks{Code is available at \url{https://github.com/erzhu419/offline-sumo}.}}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-Bus holding control requires reinforcement learning (RL) policies that generalize from limited operational logs to new traffic conditions without expensive online interaction. We benchmark four families of methods on a Changsha-calibrated SUMO microscopic simulation of a real bus network (389 buses, 12 lines, 353 stops), using a single policy that controls all 12 lines simultaneously through line and bus embeddings, trained from 3.1 million offline transitions recorded under a heuristic controller across the full network. Our comparison includes (i) pure offline methods: behavior cloning and an H2O+ advantage-weighted regression baseline; (ii) pure online soft actor-critic (SAC); and (iii) two state-of-the-art offline-to-online approaches, WSRL~\cite{zhou2024efficient} and RLPD~\cite{ball2023efficient}. We also introduce RE-SAC offline, a pure offline algorithm that combines an ensemble of ten $Q$-networks with lower-confidence-bound (LCB) pessimism as an epistemic regularizer; an ablation shows that adding an $L_1$ weight-norm penalty does not further improve results, so the effective recipe is simply ensemble plus LCB. We also introduce a rigorous post-hoc evaluation protocol that re-evaluates every saved checkpoint on 10 fresh SUMO episodes, and show that the ``best'' checkpoint metric commonly reported in offline-to-online RL work can overstate performance by up to 30\% relative to this protocol. Across 316 post-hoc-evaluated checkpoints over three seeds, we find: (1) naive offline methods overfit sharply---behavior cloning and H2O+ offline both peak early then degrade to $-9439$ and $-9482$ respectively by the end of training; (2) offline-to-online methods attain stable final returns of $-4552$ to $-5008$; (3) online SAC attains only $-6572$ and exhibits value-function instability under extended training; and (4) RE-SAC offline achieves $-4267 \pm 140$, the best result overall, without any online environment interaction. Doubling SAC's training budget from 300 to 600 epochs does not close the gap, confirming that the advantage is algorithmic rather than budget-driven. We release all code, data, and evaluated checkpoints.
+Bus holding control requires reinforcement learning (RL) policies that generalize from limited operational logs to new traffic conditions without expensive online interaction. We benchmark four families of methods on a Changsha-calibrated SUMO microscopic simulation of a real bus network (389 buses, 12 lines, 353 stops), using a single policy that controls all 12 lines simultaneously through line and bus embeddings, trained from 3.1 million offline transitions recorded under a heuristic controller across the full network. Our comparison includes (i) pure offline methods: behavior cloning, an H2O+ advantage-weighted regression baseline, and conservative $Q$-learning (CQL)~\cite{kumar2020conservative}; (ii) pure online soft actor-critic (SAC); and (iii) two state-of-the-art offline-to-online approaches, WSRL~\cite{zhou2024efficient} and RLPD~\cite{ball2023efficient}. We also introduce RE-SAC offline, a pure offline algorithm that combines an ensemble of ten $Q$-networks with lower-confidence-bound (LCB) pessimism as an epistemic regularizer; an ablation shows that adding an $L_1$ weight-norm penalty does not further improve results, so the effective recipe is simply ensemble plus LCB. We also introduce a rigorous post-hoc evaluation protocol that re-evaluates every saved checkpoint on 10 fresh SUMO episodes, and show that the ``best'' checkpoint metric commonly reported in offline-to-online RL work can overstate performance by up to 30\% relative to this protocol. Across 349 post-hoc-evaluated checkpoints over three seeds, we find: (1) naive offline methods overfit sharply---behavior cloning and H2O+ offline both peak early then degrade to $-9439$ and $-9482$ respectively by the end of training; (2) CQL is competitive on best return ($-4992$) but degrades to $-5942$ at convergence, indicating a similar overfitting trajectory at smaller magnitude; (3) offline-to-online methods attain stable final returns of $-4552$ to $-5008$; (4) online SAC attains only $-6572$ and exhibits value-function instability under extended training; and (5) RE-SAC offline achieves $-4267 \pm 140$, the best result overall, without any online environment interaction. Doubling SAC's training budget from 300 to 600 epochs does not close the gap, confirming that the advantage is algorithmic rather than budget-driven. We release all code, data, and evaluated checkpoints.
 \end{abstract}
 
-\noindent\textbf{Keywords:} deep reinforcement learning; offline reinforcement learning; offline-to-online reinforcement learning; bus holding control; multi-line transit; ensemble $Q$-learning; lower-confidence-bound pessimism; SUMO.
+\begin{IEEEkeywords}
+Deep reinforcement learning, offline reinforcement learning, offline-to-online reinforcement learning, bus holding control, multi-line transit, ensemble $Q$-learning, lower-confidence-bound pessimism, SUMO.
+\end{IEEEkeywords}
 
 \section{Introduction}
 \label{sec:intro}
@@ -55,7 +54,7 @@ Our contributions are summarized as follows:
 \begin{itemize}
   \item \textbf{Benchmark.} A reproducible SUMO benchmark for offline and offline-to-online RL on a realistic whole-network bus-holding task. A single categorical-embedding policy controls all 12 lines (389 buses, 353 stops) simultaneously, trained on 3.1 million offline transitions generated by a heuristic controller across the full Changsha-calibrated microsimulation ($\sim$98{,}000 social-vehicle trips and 15{,}079 passengers per 2.5-hour episode).
   \item \textbf{Algorithm.} RE-SAC offline, a pure offline algorithm whose effective recipe---as revealed by our ablation---is an ensemble of ten $Q$-networks trained with lower-confidence-bound (LCB) pessimism, with the LCB term the single dominant contributor.
-  \item \textbf{Evaluation protocol.} A rigorous post-hoc evaluation protocol: every saved checkpoint is re-evaluated on 10 SUMO episodes across three seeds (over 300 checkpoints total including ablations), exposing that during-training ``best'' metrics reported by existing offline-to-online work can overstate performance by up to 30\%.
+  \item \textbf{Evaluation protocol.} A rigorous post-hoc evaluation protocol: every saved checkpoint is re-evaluated on 10 SUMO episodes across three seeds (349 checkpoints total including baselines, intermediate curves, and ablations), exposing that during-training ``best'' metrics reported by existing offline-to-online work can overstate performance by up to 30\%.
   \item \textbf{Extended budget study.} An extended online SAC training study (600 epochs) that demonstrates pure online RL cannot close the gap to RE-SAC offline even with doubled budget: it plateaus around $-6500$ and exhibits transient peaks from value-function instability rather than steady convergence.
 \end{itemize}
 
@@ -83,7 +82,7 @@ Headway-based holding~\cite{daganzo2009headway,bartholdi2012self} is the classic
 
 \begin{figure}[!t]
   \centering
-  \includegraphics[width=0.70\linewidth]{figures/network_topology.pdf}
+  \includegraphics[width=\columnwidth]{figures/network_topology.pdf}
   \caption{Spatial layout of the full 12-line Changsha bus network used in our SUMO simulation. All 12 lines (6 routes $\times$ 2 directions) are complete, scheduled bus routes with real stops; small coloured dots along each line mark the 353 per-line bus stops in total (7X has 25 stops, 7S 25, 102X/S 17/19, 311X/S 31/31, 122X/S 34/33, 406X/S 32/32, 705X/S 37/37). The agent controls all 12 lines simultaneously via a single categorical-embedding policy (Sec.~\ref{sec:mdp}); Line 7X is highlighted in bold red with larger stop circles as an illustrative reference line (longest route, 13.1\,km), but all other lines are equally controlled by the same policy. Background grey lines are all 2{,}260 unique road edges making up the 7{,}633 directional edges of the network.}
   \label{fig:network}
 \end{figure}
@@ -95,7 +94,7 @@ All 12 lines operate concurrently throughout every simulation rollout: 50 buses 
 \caption{Changsha-network SUMO simulation statistics.}
 \label{tab:sumo_stats}
 \small
-\begin{tabular}{lr}
+\begin{tabular}{@{}lr@{}}
 \toprule
 Component & Count \\
 \midrule
@@ -103,15 +102,15 @@ Network edges (directed) & 7{,}633 \\
 Junctions & 2{,}527 \\
 Traffic-signal controllers & 246 \\
 Bus stops & 353 \\
-Bus lines (6 routes $\times$ 2 directions X/S), all agent-controlled & 12 \\
-Bus vehicles per day (agent-controlled) & 389 \\
-\quad Line 7X (reference line used for route-length normalisation) & 50 \\
+Bus lines (all agent-controlled) & 12 \\
+\quad of which Line 7X (reference) & 50 buses \\
+Bus vehicles per day & 389 \\
 Line 7X route length (reference) & 13.1\,km \\
-Line 7X stops (forward direction, reference) & 25 \\
+Line 7X stops (reference) & 25 \\
 Social-vehicle trips (dense / sparse) & 61{,}044 / 37{,}644 \\
-Simulated passengers (workday / transfer) & 14{,}211 / 868 \\
+Passengers (workday / transfer) & 14{,}211 / 868 \\
 Simulator step length & 0.5\,s \\
-Episode length & 18{,}000 steps ($\approx$\,2.5\,h) \\
+Episode length & 18\,000 steps ($\approx$\,2.5\,h) \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -139,17 +138,18 @@ Any bus on any of the 12 lines becomes an agent at the moment it reaches a stop 
 \]
 applied as a multiplier on the bus's default desired speed until it reaches the next stop. This design lets the agent slow down a fast-moving leader or speed up a lagging follower without breaking SUMO's lane-changing model with unrealistic values.
 
-\paragraph{Reward.} The reward is computed from SUMO events when a bus arrives at a stop. Let $h^{-}$ and $h^{+}$ denote forward and backward headways (in seconds) at arrival, and let $t_f, t_b$ denote the timetable-derived target forward and backward headways. We compute a weighted absolute-deviation term plus a symmetry bonus:
-\begin{align*}
-w &= \frac{|h^- - t_f|}{|h^- - t_f| + |h^+ - t_b| + \epsilon}, \qquad R = t_f / t_b, \\
-r_{\text{base}} &= -w \cdot |h^- - t_f| \;-\; (1-w) \cdot |h^+ - t_b| \;-\; \frac{0.5}{(1+R)/2}\,|h^- - R\,h^+|,
-\end{align*}
-where the first two terms penalise headway deviation with a soft-max weighting emphasising whichever side is more off (so the policy cannot trivially satisfy one side at the expense of the other), and the third term is a symmetry regulariser that further penalises structurally asymmetric headway profiles.
-
-A large-deviation tanh penalty is then subtracted:
-\[
-r = r_{\text{base}} \;-\; \max\Big(0,\; 20\tanh\!\big((|h^- - t_f|-0.5 t_f)/30\big) \;+\; 20\tanh\!\big((|h^+ - t_b|-0.5 t_b)/30\big)\Big).
-\]
+\paragraph{Reward.} The reward is computed from SUMO events when a bus arrives at a stop. Let $h^{-}, h^{+}$ denote forward and backward headways (in seconds) at arrival, and $t_f, t_b$ the timetable-derived target headways. We compute a weighted absolute-deviation term plus a symmetry bonus:
+\begin{align}
+w &= \frac{|h^- - t_f|}{|h^- - t_f| + |h^+ - t_b| + \epsilon}, \nonumber\\
+R &= t_f / t_b, \nonumber\\
+r_{\text{base}} &= -w |h^- - t_f| - (1-w) |h^+ - t_b| \nonumber\\
+                &\quad - \tfrac{0.5}{(1+R)/2}\,|h^- - R\,h^+|,
+\end{align}
+where the first two terms penalise headway deviation with a soft-max weighting emphasising whichever side is more off, and the third term penalises structurally asymmetric headway profiles. A large-deviation tanh penalty is then subtracted:
+\begin{align}
+r = r_{\text{base}} - \max\big(0, &\; 20\tanh\!\tfrac{|h^- - t_f|-0.5 t_f}{30} \nonumber\\
+                                    &+ 20\tanh\!\tfrac{|h^+ - t_b|-0.5 t_b}{30} \big).
+\end{align}
 The tanh penalty only activates when a headway is off-target by more than $0.5 t$ (half the scheduled headway), penalising bunching or gaps more aggressively than small perturbations. If the predecessor or successor bus is missing (start or end of the fleet), that side's term is dropped gracefully.
 
 Action penalties on $t_{\text{hold}}$ or $a_{\text{speed}}$ are not included; the speed and hold actions are implicitly penalised through their downstream effect on future headway deviation. Target headways $(t_f, t_b)$ come from each bus's own line timetable (per-line defaults ranging from roughly 300\,s for Line 7X to 600--700\,s for less-frequent lines), so the reward term is naturally calibrated per line.
@@ -168,15 +168,22 @@ A total of 3{,}104{,}419 state-action-reward transitions were collected by runni
 
 We compare seven methods, grouped by their use of offline data and online interaction. Figure~\ref{fig:method_diagram} illustrates the data flow of our proposed RE-SAC offline algorithm; the specification details follow the method descriptions below.
 
-\begin{figure}[!htbp]
+\begin{figure*}[!t]
   \centering
-  \includegraphics[width=0.98\linewidth]{figures/method_diagram.pdf}
+  \includegraphics[width=0.95\textwidth]{figures/method_diagram.pdf}
   \caption{RE-SAC offline data flow. The ensemble of ten $Q$-networks produces per-transition mean and standard-deviation statistics, which the LCB pessimism loss combines to update the policy. An optional $L_1$ weight-norm penalty on ensemble parameters was initially included but is shown dispensable by our ablation (Table~\ref{tab:ablation}).}
   \label{fig:method_diagram}
-\end{figure}
+\end{figure*}
 
 \paragraph{Pure offline.}
 Behavior cloning (BC): a Gaussian policy trained to maximize the log-likelihood of offline actions~\cite{pomerleau1988alvinn}. H2O+ offline: the offline-only mode of H2O+~\cite{niu2022trust}. It follows implicit-$Q$-learning-style~\cite{kostrikov2022offline} updates: a state-value function $V_\psi(s)$ is fit by expectile regression $\mathcal{L}_V = \mathbb{E}[\,L_2^{\tau_V}(Q_{\bar\theta}(s,a) - V_\psi(s))\,]$ with $\tau_V = 0.7$, the $Q$-function is updated by standard TD with $V_\psi(s')$ bootstrapping, and the policy is updated by advantage-weighted regression $\mathcal{L}_\pi = -\mathbb{E}[\exp(\beta_{\text{AWR}}(Q - V))\log\pi(a|s)]$ with temperature $\beta_{\text{AWR}} = 3$ and the advantage weight clipped at 100. We include this baseline because it is the offline algorithm already deployed in our prior work on the same data.
+
+CQL: conservative $Q$-learning~\cite{kumar2020conservative} with the standard CQL($\mathcal{H}$) variant. We use a twin-$Q$ SAC backbone (matching SAC, WSRL, and RLPD for fairness) and add the CQL pessimism term to the critic loss:
+\begin{align}
+\mathcal{L}_Q^{\text{CQL}} = \mathcal{L}_Q^{\text{TD}} + \alpha_{\text{cql}}\Big[&\log\!\sum_{\tilde a}\!\exp\!\big(Q(s,\tilde a) - \log p(\tilde a)\big) \nonumber\\
+                                                                                       &- Q(s, a_{\text{data}})\Big],
+\end{align}
+where the log-sum-exp is approximated by 10 actions sampled uniformly from $[-1,1]^2$ plus 10 actions from the current policy (correcting by $\log p(\tilde a)$ for both samplers), and $\alpha_{\text{cql}} = 1.0$. Policy and entropy updates follow standard SAC.
 
 \paragraph{Pure online.}
 Online SAC: soft actor-critic~\cite{haarnoja2018soft} trained from a random initialization by interacting with the SUMO environment, using a single twin $Q$-pair, automatic entropy tuning, and an update-to-data ratio of 1.
@@ -234,7 +241,7 @@ Compared to RORL~\cite{yang2022rorl}, which uses ensemble LCB and smoothness pen
 
 \paragraph{Training.} For each method and each of three seeds $\{42, 123, 456\}$: offline methods train for 100K gradient steps; online and offline-to-online methods for 300 epochs (each epoch equals one simulation rollout of 18K steps plus $N_{\text{update}}$ gradient updates). Every 5K steps (offline) or 50 epochs (online), we save a checkpoint.
 
-\paragraph{Evaluation.} All results in this paper use post-hoc evaluation: each saved checkpoint is reloaded and evaluated on 10 independent SUMO episodes (with reset seed varied), yielding a mean and standard deviation of episode return. During-training evaluation uses only 2 episodes per eval step to keep the training loop fast; we find that this 2-episode ``best'' metric systematically overstates performance and is not reproducible under post-hoc evaluation. Across over 300 evaluated checkpoints (151 for the main comparison, 66 for BC and H2O+ intermediate curves, and 99 for the RE-SAC ablation), with 10 episodes each, this protocol consumed roughly 5 hours on a 14-worker CPU pool.
+\paragraph{Evaluation.} All results in this paper use post-hoc evaluation: each saved checkpoint is reloaded and evaluated on 10 independent SUMO episodes (with reset seed varied), yielding a mean and standard deviation of episode return. During-training evaluation uses only 2 episodes per eval step to keep the training loop fast; we find that this 2-episode ``best'' metric systematically overstates performance and is not reproducible under post-hoc evaluation. Across 349 evaluated checkpoints (151 for the main comparison, 66 for BC and H2O+ intermediate curves, 99 for the RE-SAC ablation, and 33 for CQL), with 10 episodes each, this protocol consumed roughly 6 hours on a 14-worker CPU pool.
 
 \paragraph{Metrics.} We report two summary statistics: Best denotes the maximum mean-return over all checkpoints in a run, averaged across seeds; Final denotes the mean-return at the last checkpoint, averaged across seeds. Best is the stronger metric from the practitioner's view (one would deploy the best checkpoint), whereas Final measures whether the method has converged.
 
@@ -252,6 +259,7 @@ Method & Best return & Final return \\
 \midrule
 BC                         & $-8440 \pm 656$  & $-9439 \pm 993$  \\
 H2O+ offline (AWR)         & $-6561 \pm 157$  & $-9482 \pm 1868$ \\
+CQL                        & $-4992 \pm 140$  & $-5942 \pm 436$  \\
 Online SAC                 & $-6139 \pm 421$  & $-6572 \pm 292$  \\
 WSRL                       & $-4587 \pm 61$   & $-5008 \pm 242$  \\
 RLPD $(\rho=0.25)$         & $-5185 \pm 491$  & $-5403 \pm 416$  \\
@@ -264,7 +272,7 @@ RE-SAC offline (ours) & $-4267 \pm 140$ & $-4520 \pm 269$ \\
 
 Table~\ref{tab:main} reports the main comparison. Three results stand out.
 
-\paragraph{(R1) Naive offline methods fail and overfit.} Both BC and the H2O+ offline-only baseline reach a much worse final return than offline-to-online methods. BC's final ($-9439$) is theoretically bounded by the data-generating heuristic's performance ($\sim$$-9800$), and our BC reproduces this. H2O+ offline is similarly bounded at its final ($-9482$). More strikingly, Fig.~\ref{fig:curves} (left panel) shows that both methods exhibit clear overfitting: H2O+ offline peaks near step 20--30K at $-6561$ and then degrades monotonically to $-9482$ over the remaining 70K steps; BC peaks earlier at $-8440$ and also degrades. Neither method's best checkpoint is useful in practice because it would require online SUMO rollouts to identify---the kind of interaction these methods are supposed to avoid.
+\paragraph{(R1) Standard offline baselines either fail or overfit.} BC, H2O+ offline, and CQL all show a non-monotonic learning trajectory in Fig.~\ref{fig:curves} (left panel): each method reaches its best return relatively early in offline training and then degrades. BC's final ($-9439$) is bounded by the data-generating heuristic's performance ($\sim-9800$), and our BC reproduces this. H2O+ offline reaches a similar floor ($-9482$) despite its richer value-function machinery. CQL is the strongest naive-offline baseline by best return ($-4992 \pm 140$, comparable to RLPD with $\rho=0.25$) but its final ($-5942 \pm 436$) is over 900 return worse than its best, indicating the same characteristic overfitting trajectory at a smaller magnitude. None of these methods produce a checkpoint that is useful in practice without online SUMO rollouts to identify a peak---the kind of interaction they are supposed to avoid.
 
 \paragraph{(R2) RE-SAC offline is the best overall.} Without any online interaction, RE-SAC attains $-4267 \pm 140$ (best) and $-4520 \pm 269$ (final), surpassing all offline-to-online methods by 5--10\%. Its seed variance ($\sigma = 140$) is also the smallest, an order of magnitude below BC's ($\sigma = 993$) and well below online SAC's ($\sigma = 421$ best, $292$ final). Crucially, unlike BC and H2O+ offline, RE-SAC does not overfit: its curve in Fig.~\ref{fig:curves} plateaus by step 20K and remains stable through step 100K. This means any checkpoint past step 20K is deployable without having to identify a best one---the deployability property we called out as missing from BC and H2O+ offline in (R1). This is consistent with the interpretation that LCB pessimism prevents the $Q$-function from exploding on out-of-distribution actions, while the $L_1$ weight regularization keeps individual ensemble heads simple enough that aleatoric uncertainty is well-calibrated.
 
@@ -273,12 +281,12 @@ Table~\ref{tab:main} reports the main comparison. Three results stand out.
 \subsection{Learning curves}
 \label{sec:curves}
 
-\begin{figure}[!htbp]
+\begin{figure*}[!t]
   \centering
-  \includegraphics[width=0.98\linewidth]{figures/learning_curves_n10.pdf}
-  \caption{Post-hoc $N=10$ evaluation across training. Left: offline methods (step axis). RE-SAC plateaus by step 20{,}000 and is stable. In sharp contrast, BC and H2O+ offline both overfit: each reaches its best return early (BC at step $\sim$50K, H2O+ at step $\sim$20-30K) and then degrades steadily as training continues, ending near $-9500$. This is the signature pattern of offline RL without proper uncertainty regularization---extrapolation error compounds as the $Q$-function trains further on fixed data. Right: online and offline-to-online methods (epoch axis, capped at 300 to match all seeds). Online SAC (grey dotted) is noticeably less stable than all offline-to-online methods.}
+  \includegraphics[width=0.95\textwidth]{figures/learning_curves_n10.pdf}
+  \caption{Post-hoc $N=10$ evaluation across training. Left: offline methods (step axis). RE-SAC plateaus by step 20{,}000 and is stable. In sharp contrast, BC, H2O+ offline, and CQL all overfit: each reaches its best return early (BC at $\sim$50K, H2O+ at $\sim$20--30K, CQL at $\sim$60K) and then degrades steadily as training continues. Even the strongest naive-offline baseline (CQL) drops by roughly 900 return between its best and final checkpoints, while RE-SAC's gap is only 253. This is the signature pattern of offline RL without proper epistemic regularization---extrapolation error compounds as the $Q$-function trains further on fixed data. Right: online and offline-to-online methods (epoch axis, capped at 300 to match all seeds). Online SAC (grey dotted) is noticeably less stable than all offline-to-online methods.}
   \label{fig:curves}
-\end{figure}
+\end{figure*}
 
 Figure~\ref{fig:curves} confirms the table-level findings. RE-SAC's curve is almost flat from step $\sim$20K onward, suggesting that further offline training does not help once the ensemble uncertainty has calibrated. The offline-to-online methods (WSRL, RLPD) reach their plateau around epoch 100 and remain stable. Online SAC's curve, by contrast, fluctuates by several hundred between consecutive checkpoints, indicative of value-function instability rather than lack of exploration. The left panel also makes the difference between uncertainty-regularized and unregularized offline RL stark: RE-SAC's plateau versus BC and H2O+'s continuous degradation is a direct visualisation of the value of the LCB and $L_1$ regularizers we introduce.
 
@@ -287,7 +295,7 @@ Figure~\ref{fig:curves} confirms the table-level findings. RE-SAC's curve is alm
 
 \begin{figure}[!htbp]
   \centering
-  \includegraphics[width=0.85\linewidth]{figures/rlpd_ablation_n10.pdf}
+  \includegraphics[width=\columnwidth]{figures/rlpd_ablation_n10.pdf}
   \caption{RLPD offline ratio $\rho$. Higher $\rho$ (more offline data per batch) accelerates early convergence; at epoch 50 the $\rho=0.75$ variant is already $\sim$500 return ahead of $\rho=0.25$. By epoch 300 the gap between $\rho=0.50$ and $\rho=0.75$ closes, while $\rho=0.25$ lags throughout.}
   \label{fig:rlpd_ablation}
 \end{figure}
@@ -309,21 +317,21 @@ To disentangle the contribution of each regularizer in RE-SAC offline, we run th
 \caption{Ablation of RE-SAC regularizers. Same training protocol as Table~\ref{tab:main}.}
 \label{tab:ablation}
 \small
-\begin{tabular}{lrr}
+\begin{tabular}{@{}lrr@{}}
 \toprule
-Variant & Best return & Final return \\
+Variant & Best & Final \\
 \midrule
-Ensemble only (no LCB, no $L_1$)      & $-4303 \pm 84$  & $-4549 \pm 123$ \\
-$L_1$ only ($\beta=0$, $\lambda=10^{-5}$) & $-4329 \pm 61$  & $-4485 \pm 132$ \\
-LCB only ($\beta=-2$, $\lambda=0$)    & $\mathbf{-4157 \pm 40}$ & $-4499 \pm 31$ \\
-RE-SAC offline (full: LCB + $L_1$)    & $-4267 \pm 140$ & $-4520 \pm 269$ \\
+Ensemble only             & $-4303 \pm 84$  & $-4549 \pm 123$ \\
+$L_1$ only ($\beta=0$)    & $-4329 \pm 61$  & $-4485 \pm 132$ \\
+LCB only ($\lambda=0$)    & $\mathbf{-4157 \pm 40}$ & $-4499 \pm 31$ \\
+Full (LCB $+$ $L_1$)      & $-4267 \pm 140$ & $-4520 \pm 269$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \begin{figure}[!htbp]
   \centering
-  \includegraphics[width=0.85\linewidth]{figures/ablation_curves.pdf}
+  \includegraphics[width=\columnwidth]{figures/ablation_curves.pdf}
   \caption{Post-hoc $N=10$ SUMO evaluation of RE-SAC ablation variants across training. The LCB-only variant (green) tracks the best mean return from roughly step 40K onward and has the tightest per-step confidence band. $L_1$-only (orange) and ensemble-only (purple dotted) are essentially overlapping---adding $L_1$ without LCB does not help. The full variant (red, LCB plus $L_1$) sits between LCB-only and ensemble-only with the widest band, indicating that $L_1$ also destabilises when added on top of LCB.}
   \label{fig:ablation_curves}
 \end{figure}
@@ -369,62 +377,67 @@ Hyperparameters are split into two tables for readability: Table~\ref{tab:hparam
 \caption{Common hyperparameters shared across methods.}
 \label{tab:hparams_common}
 \small
-\begin{tabular}{ll}
+\begin{tabular}{@{}ll@{}}
 \toprule
 Hyperparameter & Value \\
 \midrule
 Optimizer & Adam \\
 Learning rate & $3 \times 10^{-4}$ \\
-Policy network & 2 hidden layers, width 48, ReLU \\
-Policy output & Tanh-Gaussian, $\log\sigma \in [-5, 2]$ \\
-Discount $\gamma$ (SAC-family) & 0.99 \\
-Soft-update coefficient $\tau$ & $5 \times 10^{-3}$ \\
-Target entropy (automatic $\alpha$) & $-|\mathcal{A}|=-2$ \\
+Policy network & 2 hidden layers, width 48 \\
+Policy activation & ReLU + tanh-Gaussian \\
+Discount $\gamma$ & 0.99 \\
+Soft-update $\tau$ & $5 \times 10^{-3}$ \\
+Target entropy & $-|\mathcal{A}| = -2$ \\
 Random seeds & $\{42, 123, 456\}$ \\
-Data: offline buffer size & 3{,}104{,}419 transitions \\
-Data: online buffer size (SAC/WSRL/RLPD) & 100{,}001 transitions \\
-Episode length & 18{,}000 simulator steps ($\approx 2.5$\,h) \\
+Offline buffer size & 3{,}104{,}419 \\
+Online buffer (SAC family) & 100{,}001 \\
+Episode length & 18{,}000 steps ($\approx 2.5$\,h) \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\begin{table}[!htbp]
+\begin{table*}[!t]
 \centering
 \caption{Method-specific hyperparameters. Entries marked ``---'' do not apply to that method.}
 \label{tab:hparams_method}
-\small
-\begin{tabular}{lcccccc}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lccccccc@{}}
 \toprule
-Hyperparameter & BC & H2O+ off. & SAC & WSRL & RLPD & RE-SAC \\
+Hyperparameter & BC & H2O+ off. & CQL & SAC & WSRL & RLPD & RE-SAC \\
 \midrule
-\multicolumn{7}{l}{\emph{Training schedule}} \\
-Training length          & 100K steps & 100K steps & 300 ep & 300 ep & 300 ep & 100K steps \\
-Batch size               & 2048       & 2048       & 512    & 512    & 512    & 1024 \\
-Rollout batch per epoch  & ---        & ---        & 500    & 500    & 500    & --- \\
-Warmup rollouts          & ---        & ---        & 500    & 500    & 500    & --- \\
-UTD ratio                & ---        & 1          & 1      & 1      & 1      & 1 \\
-Checkpoint interval      & 10K steps  & 10K steps  & 50 ep  & 50 ep  & 50 ep  & 10K steps \\
+\multicolumn{8}{@{}l}{\emph{Training schedule}} \\
+Training length          & 100K & 100K & 100K & 300 ep & 300 ep & 300 ep & 100K \\
+Batch size               & 2048 & 2048 & 1024 & 512 & 512 & 512 & 1024 \\
+Rollout batch / epoch    & --- & --- & --- & 500 & 500 & 500 & --- \\
+Warmup rollouts          & --- & --- & --- & 500 & 500 & 500 & --- \\
+UTD ratio                & --- & 1 & 1 & 1 & 1 & 1 & 1 \\
+Ckpt interval            & 10K & 10K & 10K & 50 ep & 50 ep & 50 ep & 10K \\
 \midrule
-\multicolumn{7}{l}{\emph{Critic}} \\
-Q-network (width $\times$ heads) & --- & $48{\times}2$ twin & $48{\times}2$ twin & $48{\times}2$ twin & $48{\times}2$ twin & $48{\times}10$ ensemble \\
-Value network (H2O+ AWR only)    & --- & $48{\times}1$      & ---                 & ---                & ---                & --- \\
+\multicolumn{8}{@{}l}{\emph{Critic}} \\
+$Q$-net (width $\times$ heads)   & --- & 48$\times$2 twin & 48$\times$2 twin & 48$\times$2 twin & 48$\times$2 twin & 48$\times$2 twin & 48$\times$10 ens. \\
+$V$-net (H2O+ AWR only)          & --- & 48$\times$1 & --- & --- & --- & --- & --- \\
 \midrule
-\multicolumn{7}{l}{\emph{Offline/online mixing}} \\
-Offline ratio $\rho$     & 1.0 & 1.0 & 0.0 & 1.0 $\to$ 0 & 0.25/0.50/0.75 & 1.0 \\
+\multicolumn{8}{@{}l}{\emph{Offline/online mixing}} \\
+Offline ratio $\rho$     & 1.0 & 1.0 & 1.0 & 0.0 & 1.0 $\to$ 0 & 0.25/0.50/0.75 & 1.0 \\
 \midrule
-\multicolumn{7}{l}{\emph{RE-SAC-specific regularisers}} \\
-LCB weight $\beta$                    & --- & --- & --- & --- & --- & $-2$ \\
-OOD std weight $\alpha_{\text{ood}}$  & --- & --- & --- & --- & --- & $0.01$ \\
-$L_1$ weight $\lambda_{\text{reg}}$   & --- & --- & --- & --- & --- & $10^{-5}$ \\
-BC anchor weight $\beta_{\text{bc}}$  & --- & --- & --- & --- & --- & $0.005$ \\
+\multicolumn{8}{@{}l}{\emph{RE-SAC regularisers}} \\
+LCB weight $\beta$                    & --- & --- & --- & --- & --- & --- & $-2$ \\
+OOD std $\alpha_{\text{ood}}$         & --- & --- & --- & --- & --- & --- & $0.01$ \\
+$L_1$ weight $\lambda_{\text{reg}}$   & --- & --- & --- & --- & --- & --- & $10^{-5}$ \\
+BC anchor $\beta_{\text{bc}}$         & --- & --- & --- & --- & --- & --- & $0.005$ \\
 \midrule
-\multicolumn{7}{l}{\emph{H2O+ AWR-specific}} \\
-Expectile / quantile                  & --- & $\tau_V=0.7$ & --- & --- & --- & --- \\
-AWR temperature                       & --- & $\beta_{\text{AWR}}=3.0$ & --- & --- & --- & --- \\
-Max advantage weight                  & --- & 100 & --- & --- & --- & --- \\
+\multicolumn{8}{@{}l}{\emph{CQL-specific}} \\
+CQL weight $\alpha_{\text{cql}}$      & --- & --- & 1.0 & --- & --- & --- & --- \\
+Random + policy actions               & --- & --- & 10 + 10 & --- & --- & --- & --- \\
+\midrule
+\multicolumn{8}{@{}l}{\emph{H2O+ AWR-specific}} \\
+Expectile $\tau_V$                    & --- & 0.7 & --- & --- & --- & --- & --- \\
+AWR temperature $\beta_{\text{AWR}}$  & --- & 3.0 & --- & --- & --- & --- & --- \\
+Max advantage weight                  & --- & 100 & --- & --- & --- & --- & --- \\
 \bottomrule
 \end{tabular}
-\end{table}
+\end{table*}
 
 \section{Network architecture}
 \label{app:arch}
@@ -454,13 +467,14 @@ All methods share a common policy/critic backbone.
 
 \paragraph{Seeds.} All results are averaged over three seeds $\{42, 123, 456\}$. Each training script sets PyTorch and NumPy random number generator seeds at startup. The SUMO simulator seed is governed internally by the route-file stochastic demand sampling and is not set by our code; this yields genuine traffic-level stochasticity across evaluation episodes rather than deterministic replays.
 
-\paragraph{Compute environment.} Training was performed on a dual-GPU server (2 $\times$ NVIDIA RTX with 12 GiB each, 12 CPU cores, Ubuntu 22.04, Python 3.8, PyTorch 2.4.1 plus CUDA 12.1). Each training script fits entirely in less than 1 GiB of GPU memory, so we ran three seeds of a method concurrently per GPU. Post-hoc evaluation ran on a separate 16-core CPU workstation (no GPU was needed since SUMO is the bottleneck); a 14-worker multiprocessing pool evaluated the full set of 316 checkpoints in roughly 5 hours.
+\paragraph{Compute environment.} Training was performed on a dual-GPU server (2 $\times$ NVIDIA RTX with 12 GiB each, 12 CPU cores, Ubuntu 22.04, Python 3.8, PyTorch 2.4.1 plus CUDA 12.1). Each training script fits entirely in less than 1 GiB of GPU memory, so we ran three seeds of a method concurrently per GPU. Post-hoc evaluation ran on a separate 16-core CPU workstation (no GPU was needed since SUMO is the bottleneck); a 14-worker multiprocessing pool evaluated the full set of 349 checkpoints in roughly 5 hours.
 
 \paragraph{Wall-clock costs.} Training wall-clock time per 100K-step run, measured as elapsed time when run three-in-parallel on one GPU:
 \begin{itemize}
 \itemsep0em
 \item BC: $\sim$30\,min.
 \item H2O+ offline: $\sim$60\,min.
+\item CQL: $\sim$2.5\,h (the multi-action logsumexp samples 20 critic queries per gradient step, dominating cost).
 \item RE-SAC offline: $\sim$60\,min.
 \item Online SAC (300 epochs): $\sim$1.5\,h (dominated by SUMO rollouts).
 \item WSRL (300 epochs): $\sim$2\,h.
@@ -476,6 +490,6 @@ The offline dataset \texttt{merged\_all\_v2.h5} is a single HDF5 file with the f
 \section{Code availability}
 \label{app:code}
 
-Source code, the offline HDF5 dataset, all 316 evaluated checkpoints, and evaluation logs are publicly released at \url{https://github.com/erzhu419/offline-sumo}. The README provides a full reproduction recipe using a conda environment defined by \texttt{requirements.txt}; running \texttt{python auto\_run.py} launches the full 22-experiment training suite with automatic GPU detection, and \texttt{python eval\_checkpoints\_parallel.py --n\_workers 14} runs the post-hoc evaluation.
+Source code, the offline HDF5 dataset, all 349 evaluated checkpoints, and evaluation logs are publicly released at \url{https://github.com/erzhu419/offline-sumo}. The README provides a full reproduction recipe using a conda environment defined by \texttt{requirements.txt}; running \texttt{python auto\_run.py} launches the full 22-experiment training suite with automatic GPU detection, and \texttt{python eval\_checkpoints\_parallel.py --n\_workers 14} runs the post-hoc evaluation.
 
 \end{document}
