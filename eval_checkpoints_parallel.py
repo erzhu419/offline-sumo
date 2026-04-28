@@ -37,16 +37,18 @@ args = parser.parse_args()
 RUN_PATTERNS = [
     ("BC",              re.compile(r"^bc_seed(\d+)_26-04-(20|21)")),
     ("CQL",             re.compile(r"^cql_seed(\d+)_26-04-27")),
-    ("RE-SAC offline",  re.compile(r"^resac_offline_seed(\d+)_26-04-(20|21)")),
+    ("RE-SAC offline",  re.compile(r"^resac_offline_seed(\d+)_26-04-(20|21|28)")),
     ("RE-SAC no LCB",   re.compile(r"^resac_offline_noLCB_seed(\d+)_26-04-(20|21)")),
-    ("RE-SAC no L1",    re.compile(r"^resac_offline_noL1_seed(\d+)_26-04-(20|21)")),
+    ("RE-SAC no L1",    re.compile(r"^resac_offline_noL1_seed(\d+)_26-04-(20|21|28)")),
+    ("CQL alpha=0.1",   re.compile(r"^cql_a01_seed(\d+)_26-04-28")),
+    ("CQL alpha=5.0",   re.compile(r"^cql_a50_seed(\d+)_26-04-28")),
     ("RE-SAC no reg",   re.compile(r"^resac_offline_noBoth_seed(\d+)_26-04-(20|21)")),
     ("RE-SAC twinQ+LCB", re.compile(r"^resac_offline_twinQ_LCB_seed(\d+)_26-04-28")),
     ("RE-SAC twinQ only", re.compile(r"^resac_offline_twinQ_only_seed(\d+)_26-04-28")),
     ("H2O+ offline",    re.compile(r"^offline_only_seed(\d+)_26-04-(20|21)")),
-    ("Online SAC",      re.compile(r"^online_seed(\d+)_26-04-(20|21)")),
-    ("WSRL",            re.compile(r"^wsrl_seed(\d+)_26-04-(20|21)")),
-    ("RLPD (0.50)",     re.compile(r"^rlpd_seed(\d+)_26-04-(20|21)")),
+    ("Online SAC",      re.compile(r"^online_seed(\d+)_26-04-(20|21|28)")),
+    ("WSRL",            re.compile(r"^wsrl_seed(\d+)_26-04-(20|21|28)")),
+    ("RLPD (0.50)",     re.compile(r"^rlpd_seed(\d+)_26-04-(20|21|28)")),
     ("RLPD (0.25)",     re.compile(r"^rlpd_ratio0\.25_seed(\d+)_26-04-(20|21)")),
     ("RLPD (0.75)",     re.compile(r"^rlpd_ratio0\.75_seed(\d+)_26-04-(20|21)")),
 ]
@@ -140,16 +142,44 @@ def worker_eval(task):
         sp = BusSamplerPolicy(policy, device="cpu")
 
         returns = []
+        # Operational metric accumulators (per-decision over the whole episode set)
+        all_hw_devs = []     # |h^- - target| at each decision
+        all_hw_back = []     # |h^+ - target| at each decision
+        all_holds   = []     # holding time (s) per decision
+        n_bunching  = 0      # decisions where forward headway < 0.5 * target
+        n_decisions = 0
         for i in range(args.n_eval):
             trajs = sampler.sample(sp, n_trajs=1, deterministic=True)
             if trajs:
                 returns.append(sum(trajs[0]["rewards"]))
+                obs_arr = trajs[0].get("observations", [])
+                act_arr = trajs[0].get("actions", [])
+                for o, a in zip(obs_arr, act_arr):
+                    if len(o) < 9: continue
+                    h_fwd = o[5]; h_bwd = o[6]; tgt = o[8]
+                    if tgt <= 0: continue
+                    all_hw_devs.append(abs(h_fwd - tgt))
+                    all_hw_back.append(abs(h_bwd - tgt))
+                    if h_fwd < 0.5 * tgt:
+                        n_bunching += 1
+                    # Action[0] in [-1,1]; hold = clip(30*a + 30, 0, 60) seconds
+                    if len(a) >= 1:
+                        all_holds.append(max(0.0, min(60.0, 30.0 * a[0] + 30.0)))
+                    n_decisions += 1
         env.close() if hasattr(env, "close") else None
 
         mean_r = float(np.mean(returns)) if returns else 0.0
+        op_metrics = {
+            "n_decisions":    n_decisions,
+            "mean_hw_dev":    float(np.mean(all_hw_devs)) if all_hw_devs else 0.0,
+            "mean_hw_dev_back": float(np.mean(all_hw_back)) if all_hw_back else 0.0,
+            "bunching_rate":  float(n_bunching / n_decisions) if n_decisions else 0.0,
+            "mean_hold_s":    float(np.mean(all_holds)) if all_holds else 0.0,
+        }
         std_r  = float(np.std(returns))  if returns else 0.0
         return {**task, "mean_return": mean_r, "std_return": std_r,
-                "n_eval": len(returns), "all_returns": returns}
+                "n_eval": len(returns), "all_returns": returns,
+                **op_metrics}
     except Exception as e:
         return {**task, "error": f"{type(e).__name__}: {e}\n{traceback.format_exc()[:500]}"}
 

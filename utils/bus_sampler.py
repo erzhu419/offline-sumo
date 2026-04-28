@@ -450,6 +450,8 @@ class BusEvalSampler:
             self._init_env_state()
 
             rewards_list = []
+            obs_list     = []  # for operational metric computation
+            action_list  = []  # raw policy outputs
             pending = {}
             _last_action = {}  # per-bus last_action tracking
             done = self.env.done
@@ -476,6 +478,8 @@ class BusEvalSampler:
                         prev = pending.pop(bus_id)
                         if station_idx != prev["station_idx"]:
                             rewards_list.append(reward_val)
+                            obs_list.append(prev["obs"][:15].tolist())
+                            action_list.append(prev["action_raw"].tolist())
 
                     # Augment obs with last_action
                     prev_a = _last_action.get(
@@ -495,11 +499,16 @@ class BusEvalSampler:
                     pending[bus_id] = {
                         "obs": obs_aug.copy(),
                         "station_idx": station_idx,
+                        "action_raw": action_raw.copy(),
                     }
 
                 state, reward, done = self.env.step_to_event(action_dict)
 
-            trajs.append({"rewards": rewards_list})
+            trajs.append({
+                "rewards":     rewards_list,
+                "observations": obs_list,
+                "actions":     action_list,
+            })
 
         return trajs
 

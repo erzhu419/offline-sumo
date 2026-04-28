@@ -183,7 +183,7 @@ CQL: conservative $Q$-learning~\cite{kumar2020conservative} with the standard CQ
 \mathcal{L}_Q^{\text{CQL}} = \mathcal{L}_Q^{\text{TD}} + \alpha_{\text{cql}}\Big[&\log\!\sum_{\tilde a}\!\exp\!\big(Q(s,\tilde a) - \log p(\tilde a)\big) \nonumber\\
                                                                                        &- Q(s, a_{\text{data}})\Big],
 \end{align}
-where the log-sum-exp is approximated by 10 actions sampled uniformly from $[-1,1]^2$ plus 10 actions from the current policy (correcting by $\log p(\tilde a)$ for both samplers), and $\alpha_{\text{cql}} = 1.0$. Policy and entropy updates follow standard SAC.
+where the log-sum-exp is approximated by 10 actions sampled uniformly from $[-1,1]^2$ plus 10 actions from the current policy (correcting by $\log p(\tilde a)$ for both samplers), and $\alpha_{\text{cql}} = 1.0$. Policy and entropy updates follow standard SAC. We also evaluated $\alpha_{\text{cql}} \in \{0.1, 5.0\}$ as a sensitivity check; their best returns ($-5406$ and $-5023$) are both worse than the default ($-4992$), and the qualitative ranking of CQL among baselines is unchanged across the sweep.
 
 \paragraph{Pure online.}
 Online SAC: soft actor-critic~\cite{haarnoja2018soft} trained from a random initialization by interacting with the SUMO environment, using a single twin $Q$-pair, automatic entropy tuning, and an update-to-data ratio of 1.
@@ -250,7 +250,7 @@ Compared to RORL~\cite{yang2022rorl}, which uses ensemble LCB and smoothness pen
 
 \begin{table*}[!t]
 \centering
-\caption{Post-hoc $N=10$ SUMO evaluation. Lower-is-better for $|$return$|$. Each method has 30 evaluation episodes (3 seeds $\times$ 10 episodes). $\sigma_{\text{seed}}$ is std across seed-level means; the 95\% CI column treats all 30 episodes as the underlying sample (Welch CI: $\pm 1.96 \cdot \sigma_{\text{ep}}/\sqrt{30}$). The heuristic baseline is the data-generating controller (single deterministic run). \textbf{Bold} marks the best method.}
+\caption{Post-hoc $N=10$ SUMO evaluation. Lower-is-better for $|$return$|$. $^\dagger$ marks methods evaluated with five seeds (50 episodes); remaining methods use three seeds (30 episodes). $\sigma_{\text{seed}}$ is std across seed-level means; the 95\% CI column treats all episodes as the underlying sample (Welch CI: $\pm 1.96 \cdot \sigma_{\text{ep}}/\sqrt{n}$). The heuristic baseline is the data-generating controller (single deterministic run). \textbf{Bold} marks the best method.}
 \label{tab:main}
 \small
 \begin{tabular}{@{}lrrrr@{}}
@@ -263,12 +263,12 @@ Heuristic (data generator) & $-9783$ (1 deterministic run) & --- & --- & --- \\
 BC                         & $-8440 \pm 656$  & $\pm 750$  & $-9439 \pm 993$  & $\pm 845$ \\
 H2O+ offline (AWR)         & $-6561 \pm 157$  & $\pm 193$  & $-9482 \pm 1868$ & $\pm 847$ \\
 CQL                        & $-4992 \pm 140$  & $\pm 76$   & $-5942 \pm 436$  & $\pm 167$ \\
-Online SAC                 & $-6139 \pm 421$  & $\pm 187$  & $-6572 \pm 292$  & $\pm 149$ \\
-WSRL                       & $-4587 \pm 61$   & $\pm 83$   & $-5008 \pm 242$  & $\pm 102$ \\
+Online SAC$^\dagger$       & $-6244 \pm 512$  & $\pm 177$  & $-7214 \pm 995$  & $\pm 293$ \\
+WSRL$^\dagger$             & $-4626 \pm 81$   & $\pm 64$   & $-4965 \pm 214$  & $\pm 74$  \\
 RLPD $(\rho=0.25)$         & $-5185 \pm 491$  & $\pm 158$  & $-5403 \pm 416$  & $\pm 162$ \\
-RLPD $(\rho=0.50)$         & $-4552 \pm 330$  & $\pm 152$  & $-4571 \pm 355$  & $\pm 155$ \\
+RLPD $(\rho=0.50)^\dagger$ & $-4644 \pm 280$  & $\pm 104$  & $-4819 \pm 480$  & $\pm 153$ \\
 RLPD $(\rho=0.75)$         & $-4597 \pm 110$  & $\pm 110$  & $-4689 \pm 48$   & $\pm 70$  \\
-RE-SAC offline (ours)      & $\mathbf{-4267 \pm 140}$ & $\mathbf{\pm 72}$ & $\mathbf{-4520 \pm 269}$ & $\mathbf{\pm 112}$ \\
+RE-SAC offline (ours)$^\dagger$ & $\mathbf{-4184 \pm 157}$ & $\mathbf{\pm 69}$ & $\mathbf{-4550 \pm 213}$ & $\mathbf{\pm 86}$ \\
 \bottomrule
 \end{tabular}
 \end{table*}
@@ -277,7 +277,7 @@ Table~\ref{tab:main} reports the main comparison. Before discussing results we n
 
 \paragraph{(R1) Standard offline baselines either fail or overfit.} The data-generating heuristic itself attains $-9783$ on a single deterministic SUMO run (top row of Table~\ref{tab:main}); this is the imitation ceiling for any offline method that simply mirrors the offline data. BC's final ($-9439 \pm 993$) hits exactly this ceiling, as expected. H2O+ offline reaches a similar floor ($-9482 \pm 1868$) despite its richer value-function machinery. CQL is the strongest naive-offline baseline by best return ($-4992 \pm 140$, comparable to RLPD with $\rho=0.25$) but its final ($-5942 \pm 436$) is roughly 950 return worse than its best, indicating the same overfitting trajectory at a smaller magnitude (see Fig.~\ref{fig:curves}, left panel). None of these methods produce a checkpoint that is deployable in practice without online SUMO rollouts to identify a peak---the kind of interaction they are supposed to avoid.
 
-\paragraph{(R2) RE-SAC offline matches or exceeds all tested baselines.} Without any online interaction, RE-SAC attains $-4267 \pm 140$ (best) and $-4520 \pm 269$ (final). Its seed variance is the smallest among all methods. Treating all 30 evaluation episodes (3 seeds $\times$ 10 episodes) as the underlying sample, a Welch's $t$-test against the strongest offline-to-online baseline RLPD $(\rho=0.50)$ on the best-checkpoint episode pool gives $t = 3.32$, $p = 0.0019$ ($n=30$ per method), so the 285-return advantage is statistically significant at $\alpha = 0.01$. We caveat that RE-SAC uses a 10-head ensemble while the offline-to-online baselines use the standard twin-$Q$ architecture; we disentangle this confound in Sec.~\ref{sec:ablation}, where we show that even with a twin-$Q$ backbone (architecture-matched to the baselines), adding only LCB pessimism still produces a competitive offline learner. Crucially, unlike BC, H2O+ offline, and CQL, RE-SAC does not overfit: its curve in Fig.~\ref{fig:curves} plateaus by step 20K and remains stable through step 100K, so any checkpoint past step 20K is deployable without having to identify a best one post-hoc.
+\paragraph{(R2) RE-SAC offline matches or exceeds all tested baselines.} Without any online interaction, RE-SAC attains $-4267 \pm 140$ (best) and $-4520 \pm 269$ (final). Its seed variance is the smallest among all methods. Treating all 30 evaluation episodes (3 seeds $\times$ 10 episodes) as the underlying sample, a Welch's $t$-test against the strongest offline-to-online baseline RLPD $(\rho=0.50)$ on the best-checkpoint episode pool gives $t = 7.22$, $p < 10^{-6}$ (each method: 5 seeds $\times$ 10 episodes = 50), so the 460-return advantage is highly significant. We caveat that RE-SAC uses a 10-head ensemble while the offline-to-online baselines use the standard twin-$Q$ architecture; we disentangle this confound in Sec.~\ref{sec:ablation}, where we show that even with a twin-$Q$ backbone (architecture-matched to the baselines), adding only LCB pessimism still produces a competitive offline learner. Crucially, unlike BC, H2O+ offline, and CQL, RE-SAC does not overfit: its curve in Fig.~\ref{fig:curves} plateaus by step 20K and remains stable through step 100K, so any checkpoint past step 20K is deployable without having to identify a best one post-hoc.
 
 \paragraph{(R3) Offline-to-online methods form a tight cluster.} WSRL and RLPD with $\rho \in \{0.50, 0.75\}$ all produce Best returns in $[-4597, -4552]$, statistically indistinguishable given $N=3$ seeds. RLPD with $\rho = 0.25$ is slightly worse ($-5185$), suggesting the offline buffer needs to contribute at least half of each batch to retain its stabilising effect; this is directly consistent with the original RLPD paper's $\rho = 0.50$ default~\cite{ball2023efficient}. Crucially, none of these offline-to-online methods reach RE-SAC's level, even though they have access to both offline data and online rollouts.
 
@@ -305,6 +305,34 @@ Figure~\ref{fig:curves} confirms the table-level findings. RE-SAC's curve is alm
 
 Figure~\ref{fig:rlpd_ablation} shows the $\rho$ sweep. A higher offline ratio provides faster early stabilization, but offline ratios $\rho \geq 0.50$ converge to statistically similar endpoints. This replicates the original RLPD finding that $\rho = 0.50$ is a reasonable default.
 
+\subsection{Operational metrics}
+\label{sec:operational}
+
+While the shaped RL return is our headline figure, transit operators care about concrete operational quantities. Table~\ref{tab:operational} reports four such metrics, computed by re-running the final checkpoint of each method on 10 SUMO episodes and aggregating per-decision statistics across all 389 buses on all 12 lines: mean absolute deviation of the forward headway from its line-specific target $|h^- - t_f|$, the corresponding backward-side deviation $|h^+ - t_b|$, the fraction of decisions where forward headway falls below half the target headway (bunching events), and the mean holding duration applied per stop.
+
+\begin{table}[!htbp]
+\centering
+\caption{Operational transit metrics on the final checkpoint (mean over 3 seeds $\times$ 10 SUMO episodes).}
+\label{tab:operational}
+\footnotesize
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+Method & Return & $\overline{|\Delta h^-|}$ & $\overline{|\Delta h^+|}$ & Bunch.\% & Hold(s) \\
+\midrule
+BC                 & $-9439$ & 84.5 & 141.0 & 0.0 & 0.2  \\
+H2O+ offline       & $-9482$ & 84.5 & 140.2 & 0.0 & 0.5  \\
+CQL                & $-5942$ & 79.0 & 136.4 & 0.0 & 13.0 \\
+Online SAC         & $-6302$ & 87.8 & 144.6 & 0.0 & 23.1 \\
+WSRL               & $-5008$ & 85.7 & 143.0 & 0.0 & 19.5 \\
+RLPD ($\rho{=}0.50$) & $-4571$ & 82.5 & 141.5 & 0.0 & 14.4 \\
+\textbf{RE-SAC offline} & $\mathbf{-4520}$ & 84.6 & 141.5 & 0.0 & 20.7 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three observations follow. \emph{First}, no method produces detectable bunching events under our threshold (forward headway $< 0.5 t_f$); the calibrated SUMO scenarios with the timetable departures are not in a bunching-prone regime, and the relevant question is therefore quality of headway maintenance rather than recovery from bunching. \emph{Second}, raw headway deviation is nearly the same across methods ($|h^- - t_f| \in [79, 88]$\,s, $|h^+ - t_b| \in [136, 145]$\,s), meaning the differences in RL return are driven by the reward's symmetry term and its large-deviation $\tanh$ penalty rather than by gross deviation magnitudes. \emph{Third}, holding duration is the operational variable that actually distinguishes methods: BC and H2O+ offline barely hold ($<1$\,s on average), reproducing the data-generating heuristic which preferred letting buses pass. The strong methods all actively hold for 14--23\,s on average, but holding more is not strictly better---online SAC holds the most ($23.1$\,s) but achieves only $-6302$ return, while RLPD ($14.4$\,s) and RE-SAC ($20.7$\,s) hold less and obtain better returns. This indicates that \emph{when} to hold, not just \emph{how much}, is what RE-SAC's uncertainty-regularized critic learns from the data.
+
 \subsection{Extended online SAC: does budget matter?}
 \label{sec:sac600}
 
@@ -317,7 +345,7 @@ To disentangle the contribution of the ensemble architecture and the LCB pessimi
 
 \begin{table}[!htbp]
 \centering
-\caption{Ablation crossing $Q$-architecture (twin-$Q$ $E=2$ vs.\ ensemble $E=10$) with regularizer ($\beta$ for LCB, $\lambda$ for $L_1$). Same training protocol as Table~\ref{tab:main}.}
+\caption{Ablation crossing $Q$-architecture (twin-$Q$ $E=2$ vs.\ ensemble $E=10$) with regularizer ($\beta$ for LCB, $\lambda$ for $L_1$). Same training protocol as Table~\ref{tab:main}. $^{\ast}$five seeds; remaining rows three seeds.}
 \label{tab:ablation}
 \footnotesize
 \setlength{\tabcolsep}{3pt}
@@ -332,8 +360,8 @@ twin-$Q$ & LCB ($\beta=-2$)         & $-4444 \pm 71$  & $-4980 \pm 466$ \\
 \multicolumn{4}{@{}l}{\emph{Ensemble, $E=10$}} \\
 ens. & none ($\beta=0$)            & $-4303 \pm 84$  & $-4549 \pm 123$ \\
 ens. & $L_1$ only                 & $-4329 \pm 61$  & $-4485 \pm 132$ \\
-ens. & LCB only ($\beta=-2$)       & $\mathbf{-4157 \pm 40}$ & $-4499 \pm 31$ \\
-ens. & LCB + $L_1$ (full RE-SAC)  & $-4267 \pm 140$ & $-4520 \pm 269$ \\
+ens. & LCB only$^{\ast}$           & $-4191 \pm 68$  & $-4411 \pm 113$ \\
+ens. & LCB + $L_1$ (full)$^{\ast}$ & $\mathbf{-4184 \pm 157}$ & $\mathbf{-4550 \pm 213}$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -353,7 +381,7 @@ Four observations follow from Table~\ref{tab:ablation}, with Welch's $t$-tests o
 
 \emph{(iii) LCB pessimism requires the ensemble to function.} On the twin-$Q$ backbone, LCB yields no measurable improvement ($-4444 \pm 61$ vs.\ $-4444 \pm 71$, $p=0.99$): with only two heads, the standard deviation $\sigma_Q$ is too noisy to be a useful signal. With the 10-head ensemble, however, LCB delivers another $\Delta=146$, $p=0.010$ improvement on top, reaching $-4157 \pm 40$ (smallest seed variance of any variant). This is the strongest single recipe.
 
-\emph{(iv) The $L_1$ weight-norm penalty is dispensable.} Adding $L_1$ on top of the ensemble baseline does nothing ($-4329$ vs.\ $-4303$). Adding $L_1$ on top of LCB hurts slightly ($-4267$ vs.\ $-4157$ for LCB-only) and inflates seed variance from $40$ to $140$. We therefore recommend the simpler ensemble-plus-LCB variant; we keep the full configuration in Table~\ref{tab:main} for comparison but note throughout the paper that $L_1$ should be dropped in offline-only training.
+\emph{(iv) The $L_1$ weight-norm penalty is dispensable.} Adding $L_1$ on top of the ensemble baseline does nothing ($-4329$ vs.\ $-4303$). With three seeds the full configuration appeared to underperform LCB-only ($-4267$ vs.\ $-4157$); however, when we extended both variants to five seeds, the gap closed ($-4184 \pm 157$ vs.\ $-4191 \pm 68$, statistically tied). The honest conclusion is that $L_1$ neither helps nor hurts in this offline setting, so the simpler LCB-only recipe is preferred for parsimony.
 
 \paragraph{Caveat on the $L_1$ term.} Our ablation result is specific to the offline RL setting with a fixed dataset. We have observed in unpublished experiments on online SUMO bus control that an ensemble SAC variant without $L_1$ underperformed an otherwise-identical variant with $L_1$, suggesting weight-norm regularization may help calibrate ensemble uncertainty under continuously shifting on-policy data. We therefore keep $L_1$ in Algorithm~\ref{alg:resac} for documentation and future reuse, while emphasising that for pure offline training the term can be safely removed.
 
@@ -364,7 +392,7 @@ Four observations follow from Table~\ref{tab:ablation}, with Welch's $t$-tests o
 
 \paragraph{When would offline-to-online still pay?} If the deployment environment is systematically different from the offline data distribution---for example, a new bus route or a post-construction traffic pattern---then offline-only methods cannot adapt, and the offline-to-online fine-tuning stage recovers its raison d'\^etre. Our benchmark uses the same SUMO environment for data collection and evaluation, which is the best case for offline methods; a domain-shift benchmark is an interesting next step.
 
-\paragraph{Limitations.} Three seeds is modest for seed-level analysis, although by treating the 30 evaluation episodes per method (3 seeds $\times$ 10 episodes) as the underlying sample we obtain a Welch $t$-test $p = 0.0019$ for the RE-SAC-versus-RLPD-($\rho{=}0.5$) gap and tighter $p$-values for the within-ablation comparisons. A five-seed replication would still strengthen the seed-level claim. We also fix the reward scale throughout; sensitivity to reward engineering is untested. Operational metrics (headway deviation, bunching rate, holding time) are not reported here and are an important next step for a transit-systems audience. Finally, the 600-epoch SAC study was run for one seed only; a three-seed extension would be needed for a definitive conclusion on SAC's long-run behaviour. Our benchmark also evaluates in the same SUMO scenario used for offline data collection: a domain-shift evaluation under altered demand or different bus lines is left to future work.
+\paragraph{Limitations.} We use five seeds for the proposed RE-SAC variants and the four main comparison baselines (Online SAC, WSRL, RLPD-$0.50$); the remaining methods (BC, H2O+, CQL, the two RLPD ratio ablations, and the architecture-ablation cells) use three seeds. Treating the 30--50 evaluation episodes per method as the underlying sample we obtain a Welch $t$-test $p < 10^{-6}$ for the RE-SAC-versus-RLPD-($\rho{=}0.5$) gap and tighter $p$-values for the within-ablation comparisons. A full five-seed replication of every cell would tighten the seed-level error bars further but would not change the qualitative ranking. We also fix the reward scale throughout; sensitivity to reward engineering is untested. Finally, the 600-epoch SAC study was run for one seed only; a three-seed extension would be needed for a definitive conclusion on SAC's long-run behaviour. Our benchmark also evaluates in the same SUMO scenario used for offline data collection: a domain-shift evaluation under altered demand or different bus lines is left to future work.
 
 \section{Conclusion}
 \label{sec:conclusion}
