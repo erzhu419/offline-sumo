@@ -36,7 +36,7 @@ for p in [_HERE, _ENV, _AGENTS, _BUFFERS, _UTILS]:
 
 from model import (
     EmbeddingLayer, BusEmbeddingPolicy,
-    BusEmbeddingQFunction, BusEmbeddingVFunction,
+    BusEmbeddingQFunction, BusEmbeddingVFunction, BusEnsembleCritic,
     BusSamplerPolicy, Scalar, soft_target_update,
 )
 from bus_replay_buffer import BusMixedReplayBuffer
@@ -60,6 +60,11 @@ parser.add_argument("--min_online",  type=int,   default=500,  help="minimum onl
 parser.add_argument("--utd",         type=int,   default=1,    help="update-to-data ratio")
 parser.add_argument("--eval_every",  type=int,   default=10)
 parser.add_argument("--ckpt_every",  type=int,   default=50)
+parser.add_argument("--ensemble_size", type=int, default=2,
+                    help="2 = standard twin-Q (default); 10 = REDQ-style ensemble for architecture-matched comparison")
+parser.add_argument("--redq_M", type=int, default=2,
+                    help="number of heads to randomly sample for REDQ-style min target Q (only used if ensemble_size > 2)")
+parser.add_argument("--tag", type=str, default="")
 args = parser.parse_args()
 
 torch.manual_seed(args.seed)
@@ -67,7 +72,9 @@ np.random.seed(args.seed)
 
 # ── Output dir ───────────────────────────────────────────────────────────────
 _ts = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
-out_dir = os.path.join(_HERE, "experiment_output", f"wsrl_seed{args.seed}_{_ts}")
+_arch_tag = f"_E{args.ensemble_size}" if args.ensemble_size != 2 else ""
+_user_tag = f"_{args.tag}" if args.tag else ""
+out_dir = os.path.join(_HERE, "experiment_output", f"wsrl{_arch_tag}{_user_tag}_seed{args.seed}_{_ts}")
 os.makedirs(out_dir, exist_ok=True)
 print(f"Output: {out_dir}")
 
@@ -97,28 +104,41 @@ emb_tmpl  = EmbeddingLayer(cat_code_dict, cat_cols, layer_norm=True, dropout=0.0
 state_dim = emb_tmpl.output_dim + (obs_dim - len(cat_cols))
 
 policy     = BusEmbeddingPolicy(state_dim, action_dim, hidden_sz, emb_tmpl.clone(), action_range=1.0)
-qf1        = BusEmbeddingQFunction(state_dim, action_dim, hidden_sz, emb_tmpl.clone())
-qf2        = BusEmbeddingQFunction(state_dim, action_dim, hidden_sz, emb_tmpl.clone())
-target_qf1 = deepcopy(qf1)
-target_qf2 = deepcopy(qf2)
+USE_ENSEMBLE = args.ensemble_size > 2
+if USE_ENSEMBLE:
+    qfs        = BusEnsembleCritic(state_dim, action_dim, hidden_sz, args.ensemble_size, emb_tmpl.clone())
+    target_qfs = deepcopy(qfs)
+    print(f"WSRL with REDQ-style ensemble: E={args.ensemble_size}, M={args.redq_M}")
+else:
+    qf1        = BusEmbeddingQFunction(state_dim, action_dim, hidden_sz, emb_tmpl.clone())
+    qf2        = BusEmbeddingQFunction(state_dim, action_dim, hidden_sz, emb_tmpl.clone())
+    target_qf1 = deepcopy(qf1)
+    target_qf2 = deepcopy(qf2)
 vf         = BusEmbeddingVFunction(state_dim, hidden_sz, emb_tmpl.clone())
 
 # ── Load pretrained weights (warm start) ─────────────────────────────────────
 pretrained_path = os.path.join(_HERE, "pretrained", "offline_final.pt")
 if os.path.exists(pretrained_path):
-    ckpt = torch.load(pretrained_path, map_location="cpu")
+    ckpt = torch.load(pretrained_path, map_location="cpu", weights_only=False)
     policy.load_state_dict(ckpt["policy"])
-    qf1.load_state_dict(ckpt["qf1"])
-    qf2.load_state_dict(ckpt["qf2"])
-    target_qf1.load_state_dict(ckpt["qf1"])
-    target_qf2.load_state_dict(ckpt["qf2"])
+    if USE_ENSEMBLE:
+        # WSRL warm-starts the policy from offline pre-training.
+        # Critics are random-initialized for the ensemble (fairer; pretrained twin-Q
+        # cannot be cleanly mapped to a 10-head ensemble).
+        print("Warm-started policy from offline; ensemble critics initialised fresh.")
+    else:
+        qf1.load_state_dict(ckpt["qf1"])
+        qf2.load_state_dict(ckpt["qf2"])
+        target_qf1.load_state_dict(ckpt["qf1"])
+        target_qf2.load_state_dict(ckpt["qf2"])
+        print(f"Loaded pretrained weights from {pretrained_path}")
     vf.load_state_dict(ckpt["vf"])
-    print(f"Loaded pretrained weights from {pretrained_path}")
 else:
     print(f"WARNING: pretrained model not found at {pretrained_path}, using random init")
 
 dev = torch.device(args.device)
-for m in [policy, qf1, qf2, target_qf1, target_qf2, vf]:
+nets_to_dev = [policy, vf] + ([qfs, target_qfs] if USE_ENSEMBLE else [qf1, qf2, target_qf1, target_qf2])
+for m in nets_to_dev:
     m.to(dev)
 
 # ── Temperature (α) ──────────────────────────────────────────────────────────
@@ -130,7 +150,10 @@ log_alpha = Scalar(INIT_LOG_ALPHA).to(dev)
 # ── Optimizers ───────────────────────────────────────────────────────────────
 LR = 3e-4
 policy_optim = torch.optim.Adam(policy.parameters(), lr=LR)
-qf_optim     = torch.optim.Adam(list(qf1.parameters()) + list(qf2.parameters()), lr=LR)
+if USE_ENSEMBLE:
+    qf_optim = torch.optim.Adam(qfs.parameters(), lr=LR)
+else:
+    qf_optim = torch.optim.Adam(list(qf1.parameters()) + list(qf2.parameters()), lr=LR)
 vf_optim     = torch.optim.Adam(vf.parameters(), lr=LR)
 alpha_optim  = torch.optim.Adam(log_alpha.parameters(), lr=LR)
 
@@ -194,7 +217,10 @@ def sac_step(batch):
     # V update: V(s) ← quantile_reg(E_π[Q(s,·) - α·log_π])
     with torch.no_grad():
         pi_a, pi_lp = policy(obs)
-        q_pi = torch.min(qf1(obs, pi_a), qf2(obs, pi_a)).squeeze()
+        if USE_ENSEMBLE:
+            q_pi = qfs(obs, pi_a).min(dim=0).values
+        else:
+            q_pi = torch.min(qf1(obs, pi_a), qf2(obs, pi_a)).squeeze()
         v_target = q_pi - alpha * pi_lp.squeeze()
     v_pred = vf(obs).squeeze()
     diff = v_target - v_pred
@@ -207,20 +233,36 @@ def sac_step(batch):
     # Q update: Q(s,a) ← r + γ·V(s')
     with torch.no_grad():
         td_target = rewards + (1.0 - dones) * DISCOUNT * vf(next_obs).squeeze()
-    q1 = qf1(obs, actions).squeeze()
-    q2 = qf2(obs, actions).squeeze()
-    qf1_loss = F.mse_loss(q1, td_target)
-    qf2_loss = F.mse_loss(q2, td_target)
-    qf_optim.zero_grad()
-    (qf1_loss + qf2_loss).backward()
-    torch.nn.utils.clip_grad_norm_(list(qf1.parameters()) + list(qf2.parameters()), 1.0)
-    qf_optim.step()
-    soft_target_update(qf1, target_qf1, SOFT_TAU)
-    soft_target_update(qf2, target_qf2, SOFT_TAU)
+    if USE_ENSEMBLE:
+        q_pred = qfs(obs, actions)  # [E, B]
+        td_tgt_b = td_target.unsqueeze(0).expand(args.ensemble_size, -1)
+        qf1_loss = F.mse_loss(q_pred, td_tgt_b)
+        qf2_loss = qf1_loss
+        qf_optim.zero_grad(); qf1_loss.backward()
+        torch.nn.utils.clip_grad_norm_(qfs.parameters(), 1.0)
+        qf_optim.step()
+        soft_target_update(qfs, target_qfs, SOFT_TAU)
+        q1 = q_pred[0]
+    else:
+        q1 = qf1(obs, actions).squeeze()
+        q2 = qf2(obs, actions).squeeze()
+        qf1_loss = F.mse_loss(q1, td_target)
+        qf2_loss = F.mse_loss(q2, td_target)
+        qf_optim.zero_grad()
+        (qf1_loss + qf2_loss).backward()
+        torch.nn.utils.clip_grad_norm_(list(qf1.parameters()) + list(qf2.parameters()), 1.0)
+        qf_optim.step()
+        soft_target_update(qf1, target_qf1, SOFT_TAU)
+        soft_target_update(qf2, target_qf2, SOFT_TAU)
 
     # Policy update: maximize E_π[Q - α·log_π]
     pi_a2, pi_lp2 = policy(obs)
-    q_pi2 = torch.min(qf1(obs, pi_a2), qf2(obs, pi_a2)).squeeze()
+    if USE_ENSEMBLE:
+        q_all2 = qfs(obs, pi_a2)
+        idx = torch.randperm(args.ensemble_size, device=q_all2.device)[:args.redq_M]
+        q_pi2 = q_all2[idx].min(dim=0).values
+    else:
+        q_pi2 = torch.min(qf1(obs, pi_a2), qf2(obs, pi_a2)).squeeze()
     policy_loss = (alpha * pi_lp2.squeeze() - q_pi2).mean()
     policy_optim.zero_grad(); policy_loss.backward(); policy_optim.step()
 
@@ -296,15 +338,22 @@ for epoch in range(1, args.n_epochs + 1):
     # ── Checkpoint ───────────────────────────────────────────────────
     if epoch % args.ckpt_every == 0:
         ckpt_p = os.path.join(out_dir, f"checkpoint_epoch{epoch}.pt")
-        torch.save(dict(policy=policy.state_dict(), qf1=qf1.state_dict(),
-                        qf2=qf2.state_dict(), vf=vf.state_dict(), epoch=epoch), ckpt_p)
+        ck = dict(policy=policy.state_dict(), vf=vf.state_dict(), epoch=epoch)
+        if USE_ENSEMBLE:
+            ck["qfs"] = qfs.state_dict()
+        else:
+            ck["qf1"] = qf1.state_dict(); ck["qf2"] = qf2.state_dict()
+        torch.save(ck, ckpt_p)
 
 csv_f.close()
 
 # ── Final save ───────────────────────────────────────────────────────────────
-torch.save(dict(policy=policy.state_dict(), qf1=qf1.state_dict(),
-                qf2=qf2.state_dict(), vf=vf.state_dict(), epoch=args.n_epochs),
-           os.path.join(out_dir, "model_final.pt"))
+ck = dict(policy=policy.state_dict(), vf=vf.state_dict(), epoch=args.n_epochs)
+if USE_ENSEMBLE:
+    ck["qfs"] = qfs.state_dict()
+else:
+    ck["qf1"] = qf1.state_dict(); ck["qf2"] = qf2.state_dict()
+torch.save(ck, os.path.join(out_dir, "model_final.pt"))
 print(f"\nFinal model saved → {out_dir}/model_final.pt")
 
 # ── Plot ──────────────────────────────────────────────────────────────────────
