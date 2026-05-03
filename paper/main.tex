@@ -489,7 +489,7 @@ Hyperparameters are split into two tables for readability: Table~\ref{tab:hparam
 
 \begin{table}[!htbp]
 \centering
-\caption{Common hyperparameters shared across methods.}
+\caption{Common hyperparameters shared across methods. The 5-seed cells extend $\{42,123,456\}$ with $\{789,1024\}$; per-method seed counts are listed in Table~\ref{tab:ckpt_inventory}.}
 \label{tab:hparams_common}
 \small
 \begin{tabular}{@{}ll@{}}
@@ -503,7 +503,7 @@ Policy activation & ReLU + tanh-Gaussian \\
 Discount $\gamma$ & 0.99 \\
 Soft-update $\tau$ & $5 \times 10^{-3}$ \\
 Target entropy & $-|\mathcal{A}| = -2$ \\
-Random seeds & base $\{42, 123, 456\}$; 5-seed cells add $\{789, 1024\}$ (see Table~\ref{tab:ckpt_inventory} for which cells use 5 seeds) \\
+Random seeds & $\{42, 123, 456\}$ (+ $\{789, 1024\}$ for 5-seed cells) \\
 Offline buffer size & 3{,}104{,}419 \\
 Online buffer (SAC family) & 100{,}001 \\
 Episode length & 18{,}000 steps ($\approx 2.5$\,h) \\
