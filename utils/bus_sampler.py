@@ -236,7 +236,12 @@ class BusStepSampler:
             last_settled_action = np.zeros(self.action_dim, dtype=np.float32)
 
             # ── Decision event loop ────────────────────────────────────
-            for ev_idx in range(max_events):
+            # Run until SUMO done OR safety cap (50x legacy max_traj_events to
+            # cover full sim_t=18000 episodes; legacy 100/200 truncated at sim_t≈1000-2000).
+            safety_cap_step = max(max_events * 50, 10000)
+            for ev_idx in range(safety_cap_step):
+                if self.env.done:
+                    break
                 # Get current active buses (those with pending decisions)
                 active_buses = _extract_active_buses(self.env.state)
 
@@ -441,6 +446,11 @@ class BusEvalSampler:
         """
         Run n_trajs episodes, collect trajectory data.
 
+        Each episode runs UNTIL the simulator's natural done condition
+        (`getMinExpectedNumber() <= 0` or `steps >= max_steps`), not until
+        a fixed number of decision events. The `max_traj_events` attribute
+        is kept only as a runaway safety cap (configurable).
+
         Returns:
             list of dicts, each with 'rewards' (list of floats).
         """
@@ -455,11 +465,15 @@ class BusEvalSampler:
             pending = {}
             _last_action = {}  # per-bus last_action tracking
             done = self.env.done
+            ev_idx = 0
+            # Safety cap: original max_traj_events (200) was a hard truncation that
+            # ended episodes at sim_t≈2000 instead of the simulator's max_steps=18000;
+            # we now use a much larger cap (50× the legacy default) and rely on
+            # SUMO's done condition for the real episode boundary.
+            safety_cap = max(self.max_traj_events * 50, 10000)
 
-            for ev_idx in range(self.max_traj_events):
-                if done:
-                    break
-
+            while not done and ev_idx < safety_cap:
+                ev_idx += 1
                 active_buses = _extract_active_buses(self.env.state)
 
                 if not active_buses:

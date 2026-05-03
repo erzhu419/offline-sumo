@@ -370,8 +370,11 @@ class SumoGymEnv:
 
     def get_passenger_stats(self):
         """Pass-through to SumoRLBridge.get_passenger_stats(). Returns 0-filled
-        dict if the simulator is not yet running (rare; protective)."""
-        if self._bridge is None or not getattr(self._bridge, "initialized", False):
+        dict only if the bridge object has never been created. After an episode
+        ends (done → bridge.close → bridge.initialized=False), the trip records
+        are still valid in bridge.passenger_completed_trips and we want to read
+        them; only the 'pending so far' computation needs the live simulator."""
+        if self._bridge is None:
             return {"n_completed": 0, "n_pending": 0, "mean_total_s": 0.0,
                     "p50_total_s": 0.0, "p90_total_s": 0.0, "max_total_s": 0.0,
                     "sum_pending_so_far_s": 0.0}
