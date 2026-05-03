@@ -32,7 +32,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--n_workers", type=int, default=14)
 parser.add_argument("--n_eval",    type=int, default=10)
 parser.add_argument("--in_csv",    type=str, default=os.path.join(_HERE, "experiment_output", "eval_results.csv"))
-parser.add_argument("--out_csv",   type=str, default=os.path.join(_HERE, "experiment_output", "eval_operational.csv"))
+parser.add_argument("--out_csv",   type=str, default=os.path.join(_HERE, "experiment_output", "eval_operational_v2.csv"))
 parser.add_argument("--methods",   type=str, default="",
                     help="comma-separated method filter; empty = all methods in in_csv")
 args = parser.parse_args()
@@ -107,34 +107,73 @@ def worker(task):
         sp = BusSamplerPolicy(policy, device="cpu")
 
         returns = []
-        all_hw_dev_fwd, all_hw_dev_bwd, all_holds = [], [], []
-        n_bunch, n_dec = 0, 0
+        # Per-decision aggregates
+        all_hw_dev_fwd, all_hw_dev_bwd = [], []
+        all_holds = []
+        all_h_fwd, all_h_bwd = [], []  # raw headways for per-line CV
+        line_ids = []  # to compute per-line CV
+        n_bunch, n_largegap, n_dec = 0, 0, 0
+        # Per-episode counters (for per-decision normalization)
+        per_episode_dec_count = []
         for _ in range(args.n_eval):
             trajs = sampler.sample(sp, n_trajs=1, deterministic=True)
             if not trajs: continue
             t = trajs[0]
             returns.append(sum(t["rewards"]))
+            ep_n_dec = 0
             for o, a in zip(t.get("observations", []), t.get("actions", [])):
                 if len(o) < 9: continue
                 h_fwd, h_bwd, tgt = o[5], o[6], o[8]
                 if tgt <= 0: continue
+                line_id = int(o[0]) if len(o) > 0 else 0  # categorical line index
+                all_h_fwd.append(h_fwd)
+                all_h_bwd.append(h_bwd)
+                line_ids.append(line_id)
                 all_hw_dev_fwd.append(abs(h_fwd - tgt))
                 all_hw_dev_bwd.append(abs(h_bwd - tgt))
-                if h_fwd < 0.5 * tgt:
+                if h_fwd < 0.5 * tgt:  # bunching: forward bus too close
                     n_bunch += 1
+                if h_fwd > 1.5 * tgt:  # large gap: forward bus too far
+                    n_largegap += 1
                 if len(a) >= 1:
                     all_holds.append(max(0.0, min(60.0, 30.0 * a[0] + 30.0)))
                 n_dec += 1
+                ep_n_dec += 1
+            per_episode_dec_count.append(ep_n_dec)
+
+        # Per-line CV(headway) — for each line, std/mean of forward headway
+        per_line_cvs = []
+        if all_h_fwd:
+            arr_h = np.asarray(all_h_fwd)
+            arr_l = np.asarray(line_ids)
+            for L in np.unique(arr_l):
+                hs = arr_h[arr_l == L]
+                if len(hs) >= 5 and hs.mean() > 1.0:
+                    per_line_cvs.append(hs.std() / hs.mean())
+        # Holding time distribution stats
+        holds_np = np.asarray(all_holds) if all_holds else np.array([0.0])
+        hold_p50 = float(np.percentile(holds_np, 50))
+        hold_p90 = float(np.percentile(holds_np, 90))
+        # Per-decision reward (return / decisions)
+        avg_decisions = float(np.mean(per_episode_dec_count)) if per_episode_dec_count else 0.0
+        avg_return = float(np.mean(returns)) if returns else 0.0
+        per_dec_reward = avg_return / max(avg_decisions, 1.0)
 
         return {
             **task,
-            "mean_return":      float(np.mean(returns)) if returns else 0.0,
+            "mean_return":      avg_return,
             "n_episodes":       len(returns),
             "n_decisions":      n_dec,
+            "avg_decisions_per_ep": avg_decisions,
+            "per_decision_reward":  per_dec_reward,
             "mean_hw_dev_fwd":  float(np.mean(all_hw_dev_fwd)) if all_hw_dev_fwd else 0.0,
             "mean_hw_dev_bwd":  float(np.mean(all_hw_dev_bwd)) if all_hw_dev_bwd else 0.0,
             "bunching_rate":    float(n_bunch / n_dec) if n_dec else 0.0,
+            "largegap_rate":    float(n_largegap / n_dec) if n_dec else 0.0,
+            "mean_per_line_cv": float(np.mean(per_line_cvs)) if per_line_cvs else 0.0,
             "mean_hold_s":      float(np.mean(all_holds)) if all_holds else 0.0,
+            "hold_p50_s":       hold_p50,
+            "hold_p90_s":       hold_p90,
         }
     except Exception as e:
         import traceback
@@ -150,8 +189,10 @@ def main():
     w = csv.writer(f)
     if write_header:
         w.writerow(["method", "seed", "kind", "step", "ckpt", "mean_return",
-                    "n_episodes", "n_decisions", "mean_hw_dev_fwd", "mean_hw_dev_bwd",
-                    "bunching_rate", "mean_hold_s", "error"])
+                    "n_episodes", "n_decisions", "avg_decisions_per_ep",
+                    "per_decision_reward", "mean_hw_dev_fwd", "mean_hw_dev_bwd",
+                    "bunching_rate", "largegap_rate", "mean_per_line_cv",
+                    "mean_hold_s", "hold_p50_s", "hold_p90_s", "error"])
         f.flush()
 
     t0 = time.time()
@@ -163,9 +204,12 @@ def main():
             w.writerow([
                 r["method"], r["seed"], r["kind"], r["step"], r["ckpt"],
                 r.get("mean_return", 0.0), r.get("n_episodes", 0),
-                r.get("n_decisions", 0), r.get("mean_hw_dev_fwd", 0.0),
-                r.get("mean_hw_dev_bwd", 0.0), r.get("bunching_rate", 0.0),
-                r.get("mean_hold_s", 0.0), err,
+                r.get("n_decisions", 0), r.get("avg_decisions_per_ep", 0.0),
+                r.get("per_decision_reward", 0.0),
+                r.get("mean_hw_dev_fwd", 0.0), r.get("mean_hw_dev_bwd", 0.0),
+                r.get("bunching_rate", 0.0), r.get("largegap_rate", 0.0),
+                r.get("mean_per_line_cv", 0.0), r.get("mean_hold_s", 0.0),
+                r.get("hold_p50_s", 0.0), r.get("hold_p90_s", 0.0), err,
             ])
             f.flush()
             elapsed_min = (time.time() - t0) / 60
