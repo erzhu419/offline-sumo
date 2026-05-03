@@ -196,8 +196,11 @@ A purely offline algorithm built on an ensemble of $E=10$ $Q$-networks using the
 
 Epistemic (LCB pessimism): the policy loss becomes
 \begin{equation}
-    \mathcal{L}_\pi = -\mathbb{E}_{s \sim \mathcal{D}, a \sim \pi(\cdot|s)} \big[\, \mu_Q(s,a) + \beta\, \sigma_Q(s,a) - \alpha \log \pi(a|s) \, \big] + \beta_{\text{bc}} \mathcal{L}_{\text{BC}},
-    \label{eq:lcb}
+\begin{aligned}
+    \mathcal{L}_\pi = & -\mathbb{E}_{s \sim \mathcal{D},\, a \sim \pi(\cdot|s)} \big[\, \mu_Q(s,a) + \beta\, \sigma_Q(s,a) \\
+                      & \quad - \alpha \log \pi(a|s) \, \big] + \beta_{\text{bc}} \mathcal{L}_{\text{BC}},
+\end{aligned}
+\label{eq:lcb}
 \end{equation}
 where $\mu_Q(s,a) = \tfrac{1}{E}\sum_i Q_{\theta_i}(s,a)$ and $\sigma_Q(s,a) = \mathrm{std}_i Q_{\theta_i}(s,a)$ are the mean and standard deviation over the ensemble heads (note $\sigma_Q$ is unchanged whether the per-action entropy term $\alpha \log\pi$ is subtracted before computing the std, since $\alpha\log\pi$ is constant in $i$); $\beta = -2$ yields a lower-confidence-bound estimate that penalizes out-of-distribution actions with high epistemic uncertainty; $\alpha$ is the auto-tuned SAC entropy temperature carried through standard maximum-entropy SAC; and $\mathcal{L}_{\text{BC}}$ is a BC term that anchors the policy to the data manifold. The same entropy term is also added to the bootstrapped target $y$ in the critic loss (i.e., we use the standard SAC soft-target form throughout); this is reflected in line~5 of Algorithm~\ref{alg:resac}.
 
@@ -243,12 +246,12 @@ Compared to RORL~\cite{yang2022rorl}, which uses ensemble LCB and smoothness pen
 
 \paragraph{Evaluation.} All results in this paper use post-hoc evaluation: each saved checkpoint is reloaded and evaluated on 10 independent SUMO episodes, yielding a mean and standard deviation of episode return. The 10 SUMO reset seeds for each checkpoint are derived deterministically from the SUMO command-line interface (no external seeding from the training script); the same 10-seed reset sequence is used across all checkpoints of a given method to make best-vs-final and seed-vs-seed contrasts comparable. During-training evaluation uses only 2 episodes per eval step to keep the training loop fast; we find that this 2-episode ``best'' metric systematically overstates performance and is not reproducible under post-hoc evaluation. Across 630 evaluated checkpoints (157 main offline-to-online comparison, 99 offline baselines [BC + H2O+ + CQL], 36 architecture-matched WSRL-E10 + RLPD-E10, 110 RE-SAC main 5-seed runs, 162 RE-SAC ablations, 66 CQL alpha-sweep), with 10 episodes each (6{,}300 total SUMO episodes), this protocol consumed roughly 6 hours on a 14-worker CPU pool. A per-method inventory of checkpoints, training seeds, and evaluation source CSVs is provided in Table~\ref{tab:ckpt_inventory}.
 
-\begin{table}[!htbp]
+\begin{table*}[!t]
 \centering
 \caption{Checkpoint inventory backing every numerical claim in this paper. Total: 19 method/ablation cells, 71 training runs (3-seed or 5-seed), 630 evaluated checkpoints, 6{,}300 SUMO evaluation episodes. CSV columns indicate which release artifact contains the per-checkpoint mean returns. ``Best'' and ``Final'' are reported as seed-mean$\pm$seed-$\sigma$ (ddof=0); 95\% CIs in Tables~\ref{tab:main}--\ref{tab:ablation} use the per-episode pool with Welch's correction or hierarchical bootstrap as noted.}
 \label{tab:ckpt_inventory}
 \footnotesize
-\setlength{\tabcolsep}{2.5pt}
+\setlength{\tabcolsep}{6pt}
 \begin{tabular}{@{}lrlrl@{}}
 \toprule
 Method (cell) & Seeds & Seed set & \#ckpt & Source CSV \\
@@ -281,7 +284,7 @@ RE-SAC, twin-$Q$ + LCB            & 3 & \{42,123,456\}        & 33 & eval\_resul
 \textbf{Total}              &  &                            & \textbf{630} &  \\
 \bottomrule
 \end{tabular}
-\end{table}
+\end{table*}
 
 \paragraph{Metrics.} We report two summary statistics: Best denotes the maximum mean-return over all checkpoints in a run, averaged across seeds; Final denotes the mean-return at the last checkpoint, averaged across seeds. Best should be read as a model-selection upper bound under the post-hoc evaluator (the best checkpoint a practitioner could pick if they re-evaluated all checkpoints in simulation, as we do); it is not directly a deployable metric, since selecting it requires the simulator. Final measures whether the method has converged and is the metric that most directly corresponds to ``train, then deploy the last checkpoint without further selection.''
 
