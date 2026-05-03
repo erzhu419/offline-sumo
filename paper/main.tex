@@ -358,12 +358,12 @@ Figure~\ref{fig:rlpd_ablation} shows the $\rho$ sweep. A higher offline ratio pr
 
 While the shaped RL return is our headline figure, transit operators care about concrete operational quantities. Table~\ref{tab:operational} reports operational metrics on the final checkpoint of each method, computed by re-running the policy on 10 SUMO episodes and aggregating per-decision statistics across all 389 buses on all 12 lines: forward and backward headway absolute deviations $|\Delta h^-|=|h^--t_f|$ and $|\Delta h^+|=|h^+-t_b|$, the large-gap rate (fraction of decisions where the forward headway exceeds 1.5$t_f$, indicating a too-large preceding gap), the mean and 90th-percentile holding durations, and a per-decision reward (episode return divided by the average number of decisions per episode, $\sim$190 across all methods) that controls for the per-episode decision count.
 
-\begin{table}[!htbp]
+\begin{table*}[!t]
 \centering
 \caption{Operational transit metrics on the final checkpoint. Methods marked $^\dagger$ use 5 seeds (50 episodes); the remaining methods use 3 seeds (30 episodes). $|\Delta h|$ is mean absolute headway deviation in seconds; LGap\% is fraction of decisions where $h^->1.5t_f$ (forward gap too large); Hold and Hold-$p_{90}$ are mean and 90th-percentile holding duration; Dec./ep is the mean number of holding decisions per episode (a per-2.5-hour-episode count); $R/\text{dec}$ is mean per-decision reward (return divided by Dec./ep). Bunching rate (decisions with $h^- < 0.5 t_f$) is $0.0$ for all methods and is therefore omitted from the table. These are aggregate \emph{operational} metrics on the agent's own decisions, \emph{not} passenger-level service quality (waiting time, in-vehicle delay, completed-trip count); see Sec.~\ref{sec:limitations}.}
 \label{tab:operational}
 \footnotesize
-\setlength{\tabcolsep}{2.5pt}
+\setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lrrrrrrrr@{}}
 \toprule
 Method & Return & $\overline{|\Delta h^-|}$ & $\overline{|\Delta h^+|}$ & LGap\% & Hold(s) & Hold-$p_{90}$ & Dec./ep & $R/\text{dec}$ \\
@@ -377,7 +377,7 @@ RLPD ($\rho{=}0.50$)$^\dagger$ & $-4819$ & 82.8 & 141.3 & 19 & 15.9 & 34.0 & 194
 \textbf{RE-SAC offline}$^\dagger$ & $\mathbf{-4550}$ & 83.1 & 139.9 & 19 & 21.5 & 42.8 & 192 & $\mathbf{-23.7}$ \\
 \bottomrule
 \end{tabular}
-\end{table}
+\end{table*}
 
 Four observations follow. \emph{First}, no method produces detectable bunching events under our threshold (forward headway $< 0.5 t_f$); the calibrated SUMO scenarios with the realistic timetable departures are not in a bunching-prone regime, and the relevant operational question is therefore quality of headway maintenance rather than recovery from bunching. The complementary large-gap rate (forward headway $>1.5 t_f$) is $\sim$18--21\% across methods and only weakly differentiates them. \emph{Second}, raw headway deviation is nearly the same across all methods ($|\Delta h^-| \in [79, 89]$\,s, $|\Delta h^+| \in [136, 144]$\,s), meaning the differences in RL return are driven by the reward's symmetry term and its large-deviation $\tanh$ penalty rather than by gross deviation magnitudes. \emph{Third}, holding duration is the operational variable that actually distinguishes methods. BC and H2O+ offline barely hold ($<1$\,s on average), reproducing the data-generating heuristic which preferred letting buses pass; their 90th-percentile holds are also near-zero, indicating they essentially never trigger long holds. CQL and the online RL methods all actively hold (mean 13--25\,s, $p_{90}$ 30--56\,s), but holding \emph{more} is not strictly better: online SAC holds the most ($\bar{t}=25.1$\,s, $p_{90}=56$\,s, near the 60\,s ceiling) yet achieves only $-7052$ return, whereas RLPD ($15.9$\,s mean, $34$\,s $p_{90}$) and RE-SAC ($21.5$\,s mean, $42.8$\,s $p_{90}$) hold strategically and obtain better returns. \emph{Fourth}, the per-decision reward $R/\text{dec}$ and the average decision count per episode (Table~\ref{tab:operational}) together rule out a per-episode decision-count confound: methods produce $\sim$190 decisions per 2.5-hour episode (within 5\% of one another), and $R/\text{dec}$ tracks total return monotonically (RE-SAC $-23.7$, RLPD $-24.9$, WSRL $-25.9$, online SAC $-37.3$). The takeaway, qualified to our shaped-reward benchmark, is that \emph{when} to hold, not just \emph{how much}, is what RE-SAC's uncertainty-regularized critic learns from the data: it concentrates its holds on a smaller fraction of high-impact decisions rather than holding everywhere. We caution that the operational metrics presented here are aggregate headway/holding statistics, not passenger-level service quality (waiting time, in-vehicle delay, completed-trip count), so the ranking should be read as ``benchmark-shaped reward and per-decision reward,'' not as a direct claim of operational deployment superiority; we discuss the additional metrics that would be needed to make a stronger transportation claim in Sec.~\ref{sec:limitations}.
 
@@ -446,23 +446,23 @@ Five observations follow from Table~\ref{tab:ablation}, with Welch's $t$-tests o
 \subsection{Limitations and statistical caveats}
 \label{sec:limitations} We use five seeds for the proposed RE-SAC variants and the four main comparison baselines (Online SAC, WSRL, RLPD-$0.50$); the remaining methods (BC, H2O+, CQL, the two RLPD ratio ablations, and the architecture-ablation cells WSRL-E10 / RLPD-E10) use three seeds. For the RE-SAC-versus-RLPD-($\rho{=}0.5$) gap, a hierarchical bootstrap (sample seeds w/ replacement, then episodes within seed; 5000 resamples) returns $\Delta = +462$ return, 95\% CI $[+167, +741]$, $\Pr(\text{RE-SAC} \geq \text{RLPD}) = 0.999$. The corresponding hierarchical-bootstrap contrasts against the architecture-matched 10-head baselines---RE-SAC offline (5 seeds) versus WSRL-E10 (3 seeds) and RLPD-E10 (3 seeds)---are reported in Table~\ref{tab:hierboot_E10} below; these confirm RE-SAC remains directionally ahead but show that the WSRL-E10 \emph{Best} contrast remains borderline (95\% CI crosses zero, $\Pr=0.93$), while the WSRL-E10 \emph{Final} contrast is statistically indistinguishable under the present 3-vs-5 seed comparison (seed-level Welch $p\!=\!0.65$). A naive Welch $t$-test on the 50-vs-50 episode pool returns $p < 10^{-6}$ for the RLPD-$0.50$ comparison, which is over-confident because it ignores seed-level dependence; the hierarchical interval is the number we recommend citing. A full five-seed replication of every cell would tighten the seed-level error bars further but would not change the qualitative ranking. \textbf{Operational/transportation-side caveats:} the operational metrics in Table~\ref{tab:operational} are agent-decision aggregates. We attempted in this revision to add passenger-side trip-duration metrics by instrumenting the SUMO bridge to track \texttt{traci.simulation.getDepartedPersonIDList} / \texttt{getArrivedPersonIDList} per simulator step; we found that the bridge's interaction with SUMO yields only about 108 fully-completed passenger trip events per 2.5-hour episode, while a control test that exercises the same SUMO configuration through raw \texttt{libsumo} (no bridge intercepts) yields $\sim$15K completed trip events. We have not yet identified the bridge-side cause of this $\sim$100$\times$ reduction in completed passenger events (the most obvious suspect, the pre-emptive 1-hour holding placeholder used in \texttt{\_collect\_new\_events} to keep stops active until the agent's action arrives, did not change the count when patched out). Because the bug pre-dates this work and is consistent across all evaluated methods, the relative ranking of methods on shaped return and operational metrics is unaffected (the headway-based reward does not read passenger counts), but reporting trustworthy passenger waiting time / in-vehicle delay / completed-trip count requires fixing the bridge first. We have therefore deferred the passenger-side table to a follow-up. We also still rely on a single deterministic SUMO run for the data-generating heuristic and do not yet include a multi-seed classical headway-based holding controller; both would strengthen the operational claim in a transportation-venue follow-up. \textbf{Other limitations:} the 600-epoch SAC study was run for one seed only; we fix the reward scale throughout (sensitivity to reward engineering is untested); the dataset's calibration against real Changsha card-data origin-destination matrices is asserted at the description level but we do not report a calibration error or validation summary in this paper; and our benchmark evaluates in the same SUMO scenario used for offline data collection, so a domain-shift evaluation under altered demand or different bus lines is left to future work.
 
-\begin{table}[!htbp]
+\begin{table*}[!t]
 \centering
 \caption{Hierarchical bootstrap (5000 resamples; sample seeds with replacement, then episodes within seed; the asymmetric-seed case is handled by sampling each side independently with replacement) of the paired mean difference between RE-SAC offline (5 seeds) and each architecture-matched 10-head baseline (3 seeds). Best refers to the per-seed best post-hoc-evaluated checkpoint. For Final we report a seed-level Welch $t$-test rather than a hierarchical bootstrap, because the E10 final per-episode return traces required for paired hierarchical bootstrap were not retained in our re-evaluation pass (only the Best ckpt was re-evaluated with full per-episode logging). The seed-level Welch number is therefore lower-powered but conservative. Positive $\Delta$ means RE-SAC ahead.}
 \label{tab:hierboot_E10}
 \footnotesize
-\setlength{\tabcolsep}{4pt}
+\setlength{\tabcolsep}{6pt}
 \begin{tabular}{@{}llrr@{}}
 \toprule
 Contrast & Metric & $\Delta$ (95\% CI / $p$) & $\Pr(\text{RE-SAC} \geq \text{baseline})$ \\
 \midrule
-vs.\ WSRL-E10 & Best  & $+181$ \,([$-62, +405$])     & $0.93$ \\
-vs.\ WSRL-E10 & Final & $+84$ \,(seed-level $p\!=\!0.65$) & --- \\
-vs.\ RLPD-E10 & Best  & $+371$ \,([$+184, +564$])    & $1.00$ \\
-vs.\ RLPD-E10 & Final & $+321$ \,(seed-level $p\!=\!0.08$) & --- \\
+vs.\ WSRL-E10 & Best  & $+181$ \;([$-62, +405$])     & $0.93$ \\
+vs.\ WSRL-E10 & Final & $+84$ \;(seed-level $p\!=\!0.65$) & --- \\
+vs.\ RLPD-E10 & Best  & $+371$ \;([$+184, +564$])    & $1.00$ \\
+vs.\ RLPD-E10 & Final & $+321$ \;(seed-level $p\!=\!0.08$) & --- \\
 \bottomrule
 \end{tabular}
-\end{table}
+\end{table*}
 
 \section{Conclusion}
 \label{sec:conclusion}
@@ -489,9 +489,10 @@ Hyperparameters are split into two tables for readability: Table~\ref{tab:hparam
 
 \begin{table}[!htbp]
 \centering
-\caption{Common hyperparameters shared across methods. The 5-seed cells extend $\{42,123,456\}$ with $\{789,1024\}$; per-method seed counts are listed in Table~\ref{tab:ckpt_inventory}.}
+\caption{Common hyperparameters shared across methods. Seed sets: 3-seed cells use $\{42,123,456\}$; 5-seed cells additionally use $\{789,1024\}$ (per-cell counts in Table~\ref{tab:ckpt_inventory}).}
 \label{tab:hparams_common}
-\small
+\footnotesize
+\setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}ll@{}}
 \toprule
 Hyperparameter & Value \\
@@ -503,7 +504,7 @@ Policy activation & ReLU + tanh-Gaussian \\
 Discount $\gamma$ & 0.99 \\
 Soft-update $\tau$ & $5 \times 10^{-3}$ \\
 Target entropy & $-|\mathcal{A}| = -2$ \\
-Random seeds & $\{42, 123, 456\}$ (+ $\{789, 1024\}$ for 5-seed cells) \\
+Random seeds & 3 or 5 seeds (see caption + Table~\ref{tab:ckpt_inventory}) \\
 Offline buffer size & 3{,}104{,}419 \\
 Online buffer (SAC family) & 100{,}001 \\
 Episode length & 18{,}000 steps ($\approx 2.5$\,h) \\
