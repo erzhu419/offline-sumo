@@ -196,6 +196,11 @@ class SumoRLBridge:
         self.active_passenger_ids = set()
         self.just_departed_buses = []
 
+        # Per-passenger trip-time tracking for transportation-side metrics.
+        # Used by Eval to compute mean / p90 trip duration, completion count, etc.
+        self.passenger_depart_time: Dict[str, float] = {}   # pid -> sim time of departure
+        self.passenger_completed_trips: list = []           # list of dicts {pid, depart, arrive, total_s}
+
         # Reset fleet terminal pool (keep FleetBus objects, just clear queues)
         for q in self.terminal_pool.values():
             q.clear()
@@ -213,6 +218,38 @@ class SumoRLBridge:
         self.initialized = False
         self.active_bus_ids = set()
         self.active_passenger_ids = set()
+
+    def get_passenger_stats(self) -> Dict[str, float]:
+        """Aggregate per-passenger trip-time statistics for the current episode.
+        Returns 0-filled dict if no completed trips were observed."""
+        import numpy as _np
+        completed = self.passenger_completed_trips
+        if not completed:
+            return {
+                "n_completed":     0,
+                "n_pending":       int(len(self.passenger_depart_time)),
+                "mean_total_s":    0.0,
+                "p50_total_s":     0.0,
+                "p90_total_s":     0.0,
+                "max_total_s":     0.0,
+                "sum_pending_so_far_s": 0.0,
+            }
+        times = _np.array([t["total_s"] for t in completed], dtype=_np.float64)
+        # Pending passengers: those who departed but never arrived (still in system at episode end)
+        try:
+            now = float(traci.simulation.getTime()) if traci.isLoaded() else 0.0
+        except Exception:
+            now = 0.0
+        pending_load = sum(now - dt for dt in self.passenger_depart_time.values())
+        return {
+            "n_completed":         int(times.size),
+            "n_pending":           int(len(self.passenger_depart_time)),
+            "mean_total_s":        float(times.mean()),
+            "p50_total_s":         float(_np.percentile(times, 50)),
+            "p90_total_s":         float(_np.percentile(times, 90)),
+            "max_total_s":         float(times.max()),
+            "sum_pending_so_far_s": float(pending_load),
+        }
 
     def _ensure_sumo_home(self) -> None:
         if "SUMO_HOME" not in os.environ:
@@ -452,11 +489,22 @@ class SumoRLBridge:
                 self.active_passenger_ids.add(person_id)
                 # CRITICAL: Activate immediately so they are visible to buses (passable_line_l populated)
                 self.passenger_obj_dic[person_id].passenger_activate(simulation_current_time, self.line_obj_dic)
-                
+            # Track depart time for ALL departing persons (even non-bus-line ones, to keep
+            # the bookkeeping symmetric with arrived_persons later).
+            self.passenger_depart_time[person_id] = float(simulation_current_time)
+
         arrived_persons = traci.simulation.getArrivedPersonIDList()
         for person_id in arrived_persons:
             if person_id in self.active_passenger_ids:
                 self.active_passenger_ids.discard(person_id)
+            depart = self.passenger_depart_time.pop(person_id, None)
+            if depart is not None:
+                self.passenger_completed_trips.append({
+                    "pid": person_id,
+                    "depart_s": depart,
+                    "arrive_s": float(simulation_current_time),
+                    "total_s":  float(simulation_current_time) - depart,
+                })
 
         # Optimization: Update stops and passengers only every update_freq steps
         if self.steps % self.update_freq == 0:

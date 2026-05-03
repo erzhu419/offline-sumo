@@ -504,10 +504,16 @@ class BusEvalSampler:
 
                 state, reward, done = self.env.step_to_event(action_dict)
 
+            # Capture passenger trip-time stats from the bridge before reset() wipes them.
+            try:
+                pax_stats = self.env.get_passenger_stats()
+            except Exception:
+                pax_stats = {}
             trajs.append({
                 "rewards":     rewards_list,
                 "observations": obs_list,
                 "actions":     action_list,
+                "pax_stats":   pax_stats,
             })
 
         return trajs

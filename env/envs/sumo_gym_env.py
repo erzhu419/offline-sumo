@@ -368,6 +368,15 @@ class SumoGymEnv:
                 ema = 0.1
                 self._snapshot_priorities[idx] = (1 - ema) * self._snapshot_priorities[idx] + ema * priority
 
+    def get_passenger_stats(self):
+        """Pass-through to SumoRLBridge.get_passenger_stats(). Returns 0-filled
+        dict if the simulator is not yet running (rare; protective)."""
+        if self._bridge is None or not getattr(self._bridge, "initialized", False):
+            return {"n_completed": 0, "n_pending": 0, "mean_total_s": 0.0,
+                    "p50_total_s": 0.0, "p90_total_s": 0.0, "max_total_s": 0.0,
+                    "sum_pending_so_far_s": 0.0}
+        return self._bridge.get_passenger_stats()
+
     def close(self):
         if self._bridge is not None:
             self._bridge.close()
