@@ -228,8 +228,8 @@ Compared to RORL~\cite{yang2022rorl}, which uses ensemble LCB and smoothness pen
     \STATE Update $\theta \leftarrow \theta - \eta \nabla_\theta \mathcal{L}_Q$
     \STATE \textit{// policy update with LCB pessimism and BC anchor}
     \STATE $a^\pi \sim \pi_\phi(\cdot \mid s)$; \quad $\mathrm{lp} \leftarrow \log\pi_\phi(a^\pi \mid s)$
-    \STATE $\mu_Q, \sigma_Q \leftarrow$ mean and std of $\{Q_{\theta_i}(s, a^\pi) - \alpha\,\mathrm{lp}\}$ over $i$
-    \STATE $\mathcal{L}_\pi \leftarrow -\mathbb{E}[\mu_Q + \beta\,\sigma_Q] + \beta_{\text{bc}}\,\mathrm{MSE}(a^\pi,\, a_{\text{data}})$
+    \STATE $\mu_Q \leftarrow \tfrac{1}{E}\sum_i Q_{\theta_i}(s, a^\pi)$;\quad $\sigma_Q \leftarrow \mathrm{std}_i\,Q_{\theta_i}(s, a^\pi)$
+    \STATE $\mathcal{L}_\pi \leftarrow -\mathbb{E}[\mu_Q + \beta\,\sigma_Q - \alpha\,\mathrm{lp}] + \beta_{\text{bc}}\,\mathrm{MSE}(a^\pi,\, a_{\text{data}})$
     \STATE Update $\phi \leftarrow \phi - \eta \nabla_\phi \mathcal{L}_\pi$
     \STATE Automatic $\alpha$ update and soft target sync: $\bar\theta \leftarrow \tau\theta + (1-\tau)\bar\theta$
 \ENDFOR
@@ -579,7 +579,7 @@ All methods share a common policy/critic backbone.
 \section{Reproducibility}
 \label{app:repro}
 
-\paragraph{Seeds.} All results are averaged over three seeds $\{42, 123, 456\}$. Each training script sets PyTorch and NumPy random number generator seeds at startup. The SUMO simulator seed is governed internally by the route-file stochastic demand sampling and is not set by our code; this yields genuine traffic-level stochasticity across evaluation episodes rather than deterministic replays.
+\paragraph{Seeds.} The four-way main comparison (RE-SAC offline, WSRL, RLPD-$0.50$, online SAC) and the two corresponding RE-SAC ablation cells (\emph{full} and \emph{LCB only}) use five training seeds $\{42, 123, 456, 789, 1024\}$; all other cells (BC, H2O+, CQL and its $\alpha$-sweep, RLPD-$0.25$ and RLPD-$0.75$, the four other RE-SAC ablation cells, the BC-anchor ablation, and the architecture-matched WSRL-E10 / RLPD-E10) use three training seeds $\{42, 123, 456\}$. Per-method seed counts are listed in Table~\ref{tab:ckpt_inventory}. Each training script sets PyTorch and NumPy random-number-generator seeds at startup. SUMO's simulator-side stochasticity comes from the route-file stochastic demand sampling and is shared across all evaluation runs; we use the same 10-episode reset sequence for all checkpoints of a given method (10 distinct \texttt{--seed} arguments to SUMO, fixed across method/seed/ckpt comparisons), so best-vs-final and seed-vs-seed contrasts are over identical SUMO realisations rather than independent ones. This is a deliberate variance-reduction choice rather than a missing seeding protocol.
 
 \paragraph{Compute environment.} Training was performed on a dual-GPU server (2 $\times$ NVIDIA RTX with 12 GiB each, 12 CPU cores, Ubuntu 22.04, Python 3.8, PyTorch 2.4.1 plus CUDA 12.1). Each training script fits entirely in less than 1 GiB of GPU memory, so we ran three seeds of a method concurrently per GPU. Post-hoc evaluation ran on a separate 16-core CPU workstation (no GPU was needed since SUMO is the bottleneck); a 14-worker multiprocessing pool evaluated the full set of 349 checkpoints in roughly 5 hours.
 
